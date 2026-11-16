@@ -46,7 +46,12 @@ export function Compare() {
           </label>
         ))}
       </div>
-      {versions.length < 2 ? <Notice>One scenario is not a comparison. Use Duplicate to make a second plan, then choose it in Scenario 2.</Notice> : null}
+      {versions.length < 2 ? (
+        <Notice>
+          Duplicate this scenario to compare a variation.
+          {chosen[0] ? <Button onClick={() => void duplicateScenario(account.id, chosen[0].id, chosen[0].activeVersionId).then((result) => setMessage(result.ok ? `Duplicated ${chosen[0].name}. Choose it as Scenario 2.` : result.message))}>Duplicate {chosen[0].name}</Button> : null}
+        </Notice>
+      ) : null}
       {warnings.map((warning) => <Notice key={warning}>{warning}</Notice>)}
       {versions.length >= 2 ? (
         <TrajectoryChart

@@ -613,7 +613,7 @@ function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: 
       </ul>
       <Field label="Milestone label"><input value={label} onChange={(event) => setLabel(event.target.value)} /></Field>
       <Field label="Milestone date"><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
-      <Button onClick={() => onInputs({ ...inputs, milestones: [...inputs.milestones, { id: crypto.randomUUID(), date, label }] })}>Add milestone</Button>
+      <Button onClick={() => { onInputs({ ...inputs, milestones: [...inputs.milestones, { id: crypto.randomUUID(), date, label: label.trim() || "Milestone" }] }); setLabel(""); setStatus("Milestone added to the draft and drawn on the chart."); }}>Add milestone</Button>
       <Horizon inputs={inputs} onInputs={onInputs} />
     </Disclosure>
   );

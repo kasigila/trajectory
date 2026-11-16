@@ -12,8 +12,10 @@ import {
   deleteDevice,
   deleteProfile,
   downloadBackup,
+  importLocalAccount,
   recordExport,
   restoreDemo,
+  restoreSnapshot,
   sessionAccount,
   setFlag,
   setOptionalConsent,
@@ -129,6 +131,7 @@ export function Settings() {
         <Button onClick={() => go("report")}>Open print-ready report</Button>
         {db.recoveryAvailable ? <Button onClick={() => downloadText("trajectory-backup.txt", downloadBackup() ?? "")}>Download unreadable backup</Button> : null}
       </article>
+      <ImportCard />
       <article className="card">
         <h2>Model registry</h2>
         <p>{MODEL.name}</p>
@@ -255,6 +258,30 @@ function DeleteSession() {
       <Button variant="danger" onClick={() => void deleteAccount(account.id, confirmation).then((result) => setMessage(result.ok ? "This local session was deleted from the browser. There is no server copy." : result.message))}>Delete this local session</Button>
       {message ? <p role="status">{message}</p> : null}
     </div>
+  );
+}
+
+function ImportCard() {
+  const [message, setMessage] = useState<string | null>(null);
+  return (
+    <article className="card">
+      <h2>Bring a file back</h2>
+      <p>A JSON export from this app opens as a local session on this browser. The file does not contain the passphrase. Each save also keeps the previous browser snapshot, which you can restore here.</p>
+      <Field label="Import a Trajectory JSON file">
+        <input aria-label="Import JSON" type="file" accept="application/json,.json" onChange={async (event) => {
+          const file = event.target.files?.[0];
+          if (!file) return;
+          try {
+            const result = importLocalAccount(JSON.parse(await file.text()));
+            setMessage(result.ok ? "Import opened as the current session." : result.message);
+          } catch {
+            setMessage("That file could not be read. Nothing was imported.");
+          }
+        }} />
+      </Field>
+      <Button onClick={() => { const result = restoreSnapshot(); setMessage(result.ok ? "Restored the previous local snapshot." : result.message); }}>Restore previous snapshot</Button>
+      {message ? <p role="status">{message}</p> : null}
+    </article>
   );
 }
 

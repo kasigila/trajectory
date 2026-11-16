@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { ageOn, isIsoDate, todayIso } from "../model/dates";
 import { applyRangeOverride, clearOverrides, stableString } from "../model/engine";
 import { sha256 } from "../model/hash";
+import { bodyFatBoundMessage, horizonBoundMessage, leanBoundMessage, waistBoundMessage, weightBoundMessage } from "../model/bounds";
 import { LIMITS, MODEL } from "../model/parameters";
 import type { DayPlanInput, ProfileInput, ScenarioInputs } from "../model/types";
 import { ftInToCm, kgToLb, lbToKg } from "../model/units";
@@ -57,9 +58,46 @@ function emit() {
   listeners.forEach((listener) => listener());
 }
 
+const SNAPSHOT = "trajectory.v1.snapshot";
+
 function persist() {
+  const previous = storage().getItem(KEY);
   const { hydrated, ...rest } = state;
-  storage().setItem(KEY, JSON.stringify({ ...rest, hydrated: true }));
+  const next = JSON.stringify({ ...rest, hydrated: true });
+  if (previous && previous !== next) storage().setItem(SNAPSHOT, previous);
+  storage().setItem(KEY, next);
+}
+
+export function restoreSnapshot(): ActionResult {
+  const raw = storage().getItem(SNAPSHOT);
+  if (!raw) return fail("No previous local snapshot is stored yet. Nothing was restored.");
+  let parsed: Database;
+  try {
+    parsed = JSON.parse(raw) as Database;
+  } catch {
+    return fail("The previous snapshot could not be read. Nothing was restored.");
+  }
+  if (parsed.schema !== 2 || !Array.isArray(parsed.accounts)) return fail("The previous snapshot is not this storage version. Nothing was restored.");
+  state = { ...parsed, hydrated: true };
+  persist();
+  emit();
+  return { ok: true };
+}
+
+export function importLocalAccount(payload: unknown): ActionResult {
+  if (!payload || typeof payload !== "object") return fail("That file is not a Trajectory export. Nothing was imported.");
+  const record = payload as { meta?: { format?: string }; account?: Account };
+  const account = record.account;
+  if (record.meta?.format !== "trajectory-local-1" || !account || typeof account.id !== "string" || !Array.isArray(account.profiles)) {
+    return fail("That file is not a Trajectory local export. Nothing was imported.");
+  }
+  const copy = structuredClone(account);
+  copy.passphraseHash = null;
+  copy.passphraseSalt = null;
+  copy.isDemo = false;
+  if (state.accounts.some((item) => item.id === copy.id)) copy.id = uid("acct");
+  commit({ ...state, accounts: [...state.accounts, copy], sessionAccountId: copy.id, onboarding: null });
+  return { ok: true, id: copy.id };
 }
 
 function commit(next: Database) {
@@ -384,9 +422,8 @@ function profileFromDraft(draft: OnboardingDraft): { ok: true; profile: Profile;
   if (height < LIMITS.heightCm[0] || height > LIMITS.heightCm[1]) {
     return fail(`Height must be between ${LIMITS.heightCm[0]} and ${LIMITS.heightCm[1]} cm to be stored. The value was not changed.`);
   }
-  if (weight < LIMITS.weightKg[0] || weight > LIMITS.weightKg[1]) {
-    return fail(`Reference weight must be between ${LIMITS.weightKg[0]} and ${LIMITS.weightKg[1]} kg to be stored. The value was not changed.`);
-  }
+  const weightProblem = weightBoundMessage(weight);
+  if (weightProblem) return fail(weightProblem);
   if (draft.energyBasis !== "model-estimated" && (maintenance == null || !Number.isFinite(maintenance))) {
     return fail("Enter a baseline expenditure, or choose the model estimate (PAL × Mifflin–St Jeor). The field was left as you typed it.");
   }
@@ -396,15 +433,16 @@ function profileFromDraft(draft: OnboardingDraft): { ok: true; profile: Profile;
   if (!Number.isFinite(intake)) return fail("Enter a baseline intake. It was not filled in for you.");
   const bodyFat = draft.bodyFatPct.trim() === "" ? null : Number(draft.bodyFatPct);
   const lean = draft.leanMassKg.trim() === "" ? null : Number(draft.leanMassKg);
-  if (bodyFat != null && (!Number.isFinite(bodyFat) || bodyFat < LIMITS.bodyFatPct[0] || bodyFat > LIMITS.bodyFatPct[1])) {
-    return fail(`Body fat must be between ${LIMITS.bodyFatPct[0]} and ${LIMITS.bodyFatPct[1]} percent, or leave it blank. The value was not changed.`);
+  if (bodyFat != null) {
+    const fatProblem = bodyFatBoundMessage(bodyFat);
+    if (fatProblem) return fail(fatProblem);
   }
-  if (lean != null && (!Number.isFinite(lean) || lean < LIMITS.leanMassKg[0] || lean > LIMITS.leanMassKg[1] || lean >= weight)) {
-    return fail(`Lean mass must be between ${LIMITS.leanMassKg[0]} and ${LIMITS.leanMassKg[1]} kg and below the reference weight, or leave it blank. The value was not changed.`);
+  if (lean != null) {
+    const leanProblem = leanBoundMessage(lean, weight);
+    if (leanProblem) return fail(leanProblem);
   }
-  if (!Number.isInteger(horizon) || horizon < LIMITS.horizonMin || horizon > LIMITS.horizonMax) {
-    return fail(`Horizon must be a whole number from ${LIMITS.horizonMin} to ${LIMITS.horizonMax} days. It was not changed.`);
-  }
+  const horizonProblem = horizonBoundMessage(horizon);
+  if (horizonProblem) return fail(horizonProblem);
   const weekendIntake = draft.weekendIntakeKcal.trim() === "" ? intake : Number(draft.weekendIntakeKcal);
   const weekendSteps = Number(draft.weekendSteps);
   if (draft.template === "weekday-weekend" && (!Number.isFinite(weekendIntake) || !Number.isFinite(weekendSteps))) {
@@ -950,8 +988,9 @@ export async function commitImport(accountId: string, args: {
 
 export function addOtherMeasurement(accountId: string, row: Omit<OtherMeasurement, "id" | "createdAt">): ActionResult {
   const waist = row.valueCm;
-  if (row.kind === "waist" && (waist == null || !Number.isFinite(waist) || waist < LIMITS.waistCm[0] || waist > LIMITS.waistCm[1])) {
-    return fail(`Waist must be between ${LIMITS.waistCm[0]} and ${LIMITS.waistCm[1]} cm to be stored. The value was not changed. This is a software bound, not a clinical measure.`);
+  if (row.kind === "waist") {
+    const waistProblem = waist == null ? waistBoundMessage(Number.NaN) : waistBoundMessage(waist);
+    if (waistProblem) return fail(waistProblem);
   }
   if (!isIsoDate(row.date)) return fail("Enter a valid date. Nothing was saved.");
   const measurement: OtherMeasurement = { ...row, id: uid("mea"), createdAt: nowIso() };
@@ -960,8 +999,9 @@ export function addOtherMeasurement(accountId: string, row: Omit<OtherMeasuremen
 }
 
 export function addComposition(accountId: string, row: Omit<CompositionLog, "id" | "createdAt">): ActionResult {
-  if (row.bodyFatPct != null && (row.bodyFatPct < LIMITS.bodyFatPct[0] || row.bodyFatPct > LIMITS.bodyFatPct[1])) {
-    return fail("That body-fat value is outside the range this build stores. It was not changed. This is not a model input.");
+  if (row.bodyFatPct != null) {
+    const fatProblem = bodyFatBoundMessage(row.bodyFatPct);
+    if (fatProblem) return fail(fatProblem);
   }
   const log: CompositionLog = { ...row, id: uid("com"), createdAt: nowIso() };
   mapAccount(accountId, (account) => ({ ...account, compositionLogs: [...account.compositionLogs, log] }));

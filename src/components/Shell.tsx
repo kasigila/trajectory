@@ -43,7 +43,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <div>
+          <div className="title-block">
             <p className="kicker">{account.displayName}</p>
             <label>
               <span className="sr-only">Active profile</span>
@@ -55,10 +55,8 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
                 ))}
               </select>
             </label>
+            <p className="today">{today} · {account.preferences.timeZone}</p>
           </div>
-          <p className="today">
-            {today} · {account.preferences.timeZone}
-          </p>
           <div className="top-actions">
             <a href="#/onboarding">New profile</a>
             <button type="button" className="btn quiet" onClick={() => {

@@ -21,11 +21,13 @@ export function Report() {
       <p>Profile {profile.label}. Generated {stamp(new Date().toISOString())} for local dates in {account.preferences.timeZone}.</p>
       {version && scenario ? (
         <>
-          <p>
-            Version {version.versionNumber}. {MODEL.name} ({MODEL.shortCitation}). Not a clinically validated medical device.
-            Saved {stamp(version.forecast.completedAt)}. Short hash {version.inputHash.slice(0, 12)}.
-            <button type="button" className="btn quiet no-print" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy full hash</button>
-          </p>
+          <p>Version {version.versionNumber}. {MODEL.name} ({MODEL.shortCitation}). Not a clinically validated medical device. Saved {stamp(version.forecast.completedAt)}.</p>
+          <details className="technical">
+            <summary>Technical details</summary>
+            <p>The short hash identifies this exact saved plan. Copy it if you want to compare two files later. It is not a medical identifier.</p>
+            <p className="mono">Hash {version.inputHash.slice(0, 12)} <button type="button" className="btn quiet no-print" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy full hash</button></p>
+            <p className="fine">Model {MODEL.id} {MODEL.version}. Engine {MODEL.engineBuild}. This run keeps the model version it was saved with.</p>
+          </details>
           <p>Horizon {when(version.inputSnapshot.startDate, account.preferences)} through {when(addDays(version.inputSnapshot.startDate, version.inputSnapshot.horizonDays - 1), account.preferences)}, both dates included. Maintenance basis {energy(maintenanceBasis(version.inputSnapshot.profile) ?? NaN)}.</p>
           <TrajectoryChart
             caption="Report chart"

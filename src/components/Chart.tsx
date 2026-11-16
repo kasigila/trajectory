@@ -150,6 +150,7 @@ export function TrajectoryChart(props: Props) {
           aria-hidden="true"
           onPointerMove={(event) => nearest(event.clientX, event.currentTarget)}
         >
+          <text x={14} y={PAD.t} className="axis-name">{props.hideAbsolute ? `Change, ${props.unit}` : props.unit}</text>
           {ticks.map((tick) => (
             <g key={tick}>
               <line x1={PAD.l} x2={W - PAD.r} y1={yOfPlot(tick)} y2={yOfPlot(tick)} className="grid" />
@@ -175,7 +176,10 @@ export function TrajectoryChart(props: Props) {
             <line key={date} x1={xOf(date)} x2={xOf(date)} y1={PAD.t} y2={H - PAD.b} className="cycle" />
           ))}
           {(props.milestones ?? []).map((mark) => (
-            <line key={`${mark.date}-${mark.label}`} x1={xOf(mark.date)} x2={xOf(mark.date)} y1={H - PAD.b} y2={H - PAD.b + 6} className="milestone" />
+            <g key={`${mark.date}-${mark.label}`}>
+              <line x1={xOf(mark.date)} x2={xOf(mark.date)} y1={PAD.t + 16} y2={H - PAD.b} className="milestone" />
+              <text x={xOf(mark.date) + 4} y={PAD.t + 28} className="milestone-label">{mark.label}</text>
+            </g>
           ))}
           {props.today && dates.length && props.today >= dates[0] && props.today <= dates[dates.length - 1] ? (
             <g>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DISCLAIMER, PRIVACY, TAGLINE, TERMS } from "../copy";
 import { go } from "../route";
-import { acceptGate, sessionAccount, signIn, useDb } from "../state/store";
+import { acceptGate, restoreDemo, sessionAccount, signIn, useDb } from "../state/store";
 import { Logo } from "../components/Logo";
 import { Button, Disclosure, Field, Notice } from "../components/ui";
 
@@ -16,7 +16,7 @@ export function Gate() {
         <Logo />
         <p className="tagline">{TAGLINE}</p>
         <h1>A studio for dated body-weight scenarios.</h1>
-        <p className="lede">This is a private weight-forecasting tool for adults. After this age check you set up your own profile. It is not a sample person, not a diet tracker, and not a medical device.</p>
+        <p className="lede">Trajectory forecasts an adult’s weight from a plan you write, using the published Hall model. Your numbers stay in this browser. It is not a diet tracker and not a medical device.</p>
         {db.deletionReceipt ? <Notice>Local data for “{db.deletionReceipt.label}” was removed on {db.deletionReceipt.at}. This build has no server backup.</Notice> : null}
         <Field label="Your date of birth" hint="Used only to enforce the 18+ limit. Use the calendar. Your profile can use a different date. Health-data permission is not part of this step.">
           <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
@@ -34,6 +34,16 @@ export function Gate() {
         >
           I am 18 or older and I accept the terms and privacy notice
         </Button>
+        <Button
+          onClick={() => {
+            const result = acceptGate(birthDate);
+            if (!result.ok) setError(result.message);
+            else void restoreDemo().then(() => go("overview"));
+          }}
+        >
+          I am 18 or older. Show the sample forecast first
+        </Button>
+        <p className="fine">The sample is a fictional profile so you can see a chart before the nine setup steps. It is not your data. You can replace it with your own profile afterward.</p>
         <p className="fine">{DISCLAIMER}</p>
       </main>
     );

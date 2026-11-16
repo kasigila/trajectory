@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DISCLAIMER } from "../copy";
 import { ageOn, isIsoDate, todayIso } from "../model/dates";
+import { bodyFatBoundMessage, horizonBoundMessage, intakeBoundMessage, leanBoundMessage, weightBoundMessage } from "../model/bounds";
 import { ACTIVITY_CATEGORIES, CATEGORY_LABEL, LIMITS } from "../model/parameters";
 import { ftInToCm, lbToKg } from "../model/units";
 import { go } from "../route";
@@ -46,6 +47,15 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
   return (
     <main className="gate">
       <p className="kicker">Step {draft.step + 1} of {STEPS.length}</p>
+      <ol className="steps">
+        {STEPS.map((name, index) => (
+          <li key={name}>
+            <button type="button" disabled={index > draft.step} aria-current={index === draft.step ? "step" : undefined} onClick={() => { if (index < draft.step) patch({ step: index }); }}>
+              {name}
+            </button>
+          </li>
+        ))}
+      </ol>
       <h1>{STEPS[draft.step]}</h1>
       {draft.step === 0 ? (
         <>
@@ -147,7 +157,7 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
           </Field>
           <Field label="Start date" hint="Use the calendar. The stored date is year-month-day."><input type="date" value={draft.startDate} onChange={(event) => patch({ startDate: event.target.value })} /></Field>
           <Field label="Horizon, days"><input value={draft.horizonDays} onChange={(event) => patch({ horizonDays: event.target.value })} /></Field>
-          <Field label="Baseline intake, kcal"><input value={draft.intakeKcal} onChange={(event) => patch({ intakeKcal: event.target.value })} /></Field>
+          <Field label="Baseline intake, kcal" hint={intakeHint(draft.intakeKcal)}><input value={draft.intakeKcal} onChange={(event) => patch({ intakeKcal: event.target.value })} /></Field>
           {draft.template === "weekday-weekend" ? (
             <>
               <Field label="Weekend intake"><input value={draft.weekendIntakeKcal} onChange={(event) => patch({ weekendIntakeKcal: event.target.value })} /></Field>
@@ -209,6 +219,11 @@ function energyLabel(value: OnboardingDraft["energyBasis"]) {
   return "Retrospective sketch";
 }
 
+function intakeHint(value: string) {
+  if (!value.trim()) return "The plan’s daily intake. A warning appears outside a wide software band, and that warning does not block saving.";
+  return intakeBoundMessage(Number(value)).warning ?? "The plan’s daily intake.";
+}
+
 function stepError(draft: OnboardingDraft): string | null {
   if (draft.step === 1) {
     if (!isIsoDate(draft.birthDate)) return "Enter a date of birth before continuing.";
@@ -224,22 +239,20 @@ function stepError(draft: OnboardingDraft): string | null {
     if (!Number.isFinite(height) || height < LIMITS.heightCm[0] || height > LIMITS.heightCm[1]) {
       return `Height must be between ${LIMITS.heightCm[0]} and ${LIMITS.heightCm[1]} cm. The value was not changed.`;
     }
-    if (!draft.weightKg.trim() || !Number.isFinite(weightKg) || weightKg < LIMITS.weightKg[0] || weightKg > LIMITS.weightKg[1]) {
-      return `Reference weight must be between ${LIMITS.weightKg[0]} and ${LIMITS.weightKg[1]} kg. The value was not changed.`;
-    }
+    if (!draft.weightKg.trim()) return "Enter a reference weight before continuing.";
+    const weightProblem = weightBoundMessage(weightKg);
+    if (weightProblem) return weightProblem;
   }
   if (draft.step === 5) {
     if (draft.bodyFatPct.trim()) {
-      const fat = Number(draft.bodyFatPct);
-      if (!Number.isFinite(fat) || fat < LIMITS.bodyFatPct[0] || fat > LIMITS.bodyFatPct[1]) {
-        return `Body fat must be between ${LIMITS.bodyFatPct[0]} and ${LIMITS.bodyFatPct[1]} percent, or leave it blank.`;
-      }
+      const fatProblem = bodyFatBoundMessage(Number(draft.bodyFatPct));
+      if (fatProblem) return fatProblem;
     }
     if (draft.leanMassKg.trim()) {
-      const lean = Number(draft.leanMassKg);
-      if (!Number.isFinite(lean) || lean < LIMITS.leanMassKg[0] || lean > LIMITS.leanMassKg[1]) {
-        return `Lean mass must be between ${LIMITS.leanMassKg[0]} and ${LIMITS.leanMassKg[1]} kg, or leave it blank.`;
-      }
+      const enteredWeight = Number(draft.weightKg);
+      const weightKg = draft.unit === "lb" ? lbToKg(enteredWeight) : enteredWeight;
+      const leanProblem = leanBoundMessage(Number(draft.leanMassKg), weightKg);
+      if (leanProblem) return leanProblem;
     }
   }
   if (draft.step === 6 && draft.energyBasis === "user-estimate") {
@@ -251,15 +264,11 @@ function stepError(draft: OnboardingDraft): string | null {
   }
   if (draft.step === 7) {
     if (!isIsoDate(draft.startDate)) return "Choose a start date before continuing.";
-    const horizon = Number(draft.horizonDays);
-    if (!Number.isInteger(horizon) || horizon < LIMITS.horizonMin || horizon > LIMITS.horizonMax) {
-      return `Horizon must be a whole number from ${LIMITS.horizonMin} to ${LIMITS.horizonMax} days.`;
-    }
-    const intake = Number(draft.intakeKcal);
-    if (!draft.intakeKcal.trim() || !Number.isFinite(intake)) return "Enter a baseline intake before continuing.";
-    if (intake < LIMITS.intakeKcal[0] || intake > LIMITS.intakeKcal[1]) {
-      return `Intake must be between ${LIMITS.intakeKcal[0]} and ${LIMITS.intakeKcal[1]} kcal. It was not changed.`;
-    }
+    const horizonProblem = horizonBoundMessage(Number(draft.horizonDays));
+    if (horizonProblem) return horizonProblem;
+    if (!draft.intakeKcal.trim()) return "Enter a baseline intake before continuing.";
+    const intakeProblem = intakeBoundMessage(Number(draft.intakeKcal)).error;
+    if (intakeProblem) return intakeProblem;
   }
   return null;
 }

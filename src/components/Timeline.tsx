@@ -42,7 +42,7 @@ export function Timeline({ start, end, today, selectedStart, selectedEnd, marks,
                 <button
                   key={date}
                   type="button"
-                  className={date === today ? "day today" : "day"}
+                  className={["day", date === today ? "today" : "", mark?.phase ? "phase" : "", mark?.override ? "override" : ""].filter(Boolean).join(" ")}
                   aria-pressed={selected}
                   aria-label={`${formatDate(date, dateStyle)}${mark?.phase ? `, phase ${mark.phase}` : ""}${mark?.override ? ", single-day override" : ""}`}
                   onClick={(event) => onSelect(date, event.shiftKey)}
@@ -59,8 +59,7 @@ export function Timeline({ start, end, today, selectedStart, selectedEnd, marks,
                   data-date={date}
                 >
                   <strong>{Number(date.slice(8))}</strong>
-                  {mark?.phase ? <em>{mark.phase}</em> : <em>Base</em>}
-                  {mark?.override ? <i aria-hidden="true" /> : null}
+                  {mark?.override ? <em>Override</em> : mark?.phase ? <em>{mark.phase}</em> : <em>Plan</em>}
                 </button>
               );
             })}

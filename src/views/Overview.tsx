@@ -1,6 +1,7 @@
 import { TrajectoryChart } from "../components/Chart";
 import { PageTitle } from "../components/Shell";
 import { energy, stamp, weight, when } from "../format";
+import { proposeCalibration } from "../model/calibrate";
 import { todayIso } from "../model/dates";
 import { HALL_CITATION, MODEL } from "../model/parameters";
 import { smoothObservations } from "../model/trend";
@@ -20,6 +21,8 @@ export function Overview() {
   const lastPoint = version?.forecast.points.at(-1);
   const parameter =
     profile.sexParameter === "parameter-a" ? "men’s published equations" : profile.sexParameter === "parameter-b" ? "women’s published equations" : "not specified";
+  const coverage = version ? proposeCalibration(version.inputSnapshot, observations.map((obs) => ({ date: obs.localDate, kg: obs.valueKg }))) : null;
+  const marker = version?.inputSnapshot.goal;
   return (
     <section className="overview-hero">
       <PageTitle compact kicker="Trajectory" title={profile.label} lede="Hall model for the active plan. Readings stay off the curve." />
@@ -56,7 +59,9 @@ export function Overview() {
           <p>{lastPoint ? `Central estimate on ${when(lastPoint.date, account.preferences)}. ${rangeLine(lastPoint.lowerKg, lastPoint.upperKg, account.preferences)}` : "No run yet."}</p>
         </article>
       </div>
-      <p className="fine">Baseline expenditure on the profile: {profile.energyBasis === "model-estimated" ? "PAL × Mifflin–St Jeor RMR" : energy(profile.maintenanceKcal ?? 0)}. Reference weight {weight(profile.referenceWeightKg, account.preferences)} on {when(profile.referenceDate, account.preferences)}. Model input: {parameter}.</p>
+      <p className="fine">Baseline expenditure on the profile: {profile.energyBasis === "model-estimated" ? "PAL × Mifflin–St Jeor RMR" : energy(profile.maintenanceKcal ?? 0)}. Starting weight {weight(profile.referenceWeightKg, account.preferences)} on {when(profile.referenceDate, account.preferences)}. Model input: {parameter}.</p>
+      {coverage ? <p className="fine">Calibration coverage: {coverage.readingCount} weigh-in{coverage.readingCount === 1 ? "" : "s"} over {coverage.spanDays} days. {coverage.eligible ? "A retrospective sketch can be described in Insights." : coverage.reason}</p> : null}
+      {marker?.weightKg != null && lastPoint ? <p className="fine">Chart marker {weight(marker.weightKg, account.preferences)}{marker.label ? ` (${marker.label})` : ""}. On the last day the central estimate is {lastPoint.centralKg <= marker.weightKg ? "at or below" : "above"} that marker. No crossing date is calculated.</p> : null}
       {version ? <p className="fine">Forecast generated {stamp(version.forecast.completedAt)}. Hash {version.inputHash.slice(0, 12)}.</p> : null}
       <div className="toolbar">
         <Button variant="primary" onClick={() => go("simulator")}>Open simulator</Button>

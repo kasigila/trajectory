@@ -75,7 +75,7 @@ export function Progress() {
           return false;
         }
         setError(null);
-        setMessage(result.warning ?? "Reading saved. The forecast and the plan were not changed.");
+        setMessage(result.warning ?? `Weigh-in ${value} ${unit} saved for ${date}. The forecast and the plan were not changed.`);
         return true;
       }} />
       <h2>History</h2>
@@ -86,7 +86,11 @@ export function Progress() {
             const result = updateObservation(account.id, obs.id, kg, note);
             if (!result.ok) setError(result.message);
             else setMessage("Reading updated. Earlier value kept in its correction history. The forecast was not changed.");
-          }} onDelete={() => { deleteObservation(account.id, obs.id); setMessage("Reading removed from the chart. The record stays under removed readings."); }} />
+          }} onDelete={() => {
+            if (!window.confirm("Remove this weigh-in from the chart? You can restore it afterward. The forecast is not changed.")) return;
+            deleteObservation(account.id, obs.id);
+            setMessage("Weigh-in removed from the chart. Restore it under Removed readings. The forecast was not changed.");
+          }} />
         ))}
       </ul>
       <details>
