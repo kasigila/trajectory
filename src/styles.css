@@ -66,7 +66,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
   padding: 8px 10px; border-radius: 999px; cursor: pointer;
 }
 .nav a[aria-current="page"] { background: var(--bg-elev); }
-.mark { font-family: var(--serif); font-size: 28px; margin: 0 0 24px; letter-spacing: -0.03em; }
+.mark { display: flex; align-items: center; gap: 10px; font-family: var(--serif); font-size: 28px; margin: 0 0 24px; letter-spacing: -0.03em; line-height: 0.9; }
+.mark-svg { width: 42px; height: 42px; flex: none; display: block; }
 .mark small, .tagline { display: block; font-family: var(--sans); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
 .workspace { min-width: 0; }
 .topbar, .toolbar, .metrics { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; }

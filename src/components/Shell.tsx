@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { DISCLAIMER } from "../copy";
+import { Logo } from "./Logo";
 import { diffDays, hourInTimeZone, todayIso } from "../model/dates";
 import type { Route } from "../route";
 import { dismissReminder, setActiveProfile, signOut, useSession } from "../state/store";
@@ -30,10 +31,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
         Skip to content
       </a>
       <aside className="nav">
-        <p className="mark">
-          Trajectory
-          <small>Studio</small>
-        </p>
+        <Logo />
         <nav aria-label="Primary">
           {[...PRIMARY, ...MORE].map((item) => (
             <a key={item.id} href={`#/${item.id}`} aria-current={route === item.id ? "page" : undefined}>

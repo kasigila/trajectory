@@ -1,0 +1,18 @@
+export function Logo() {
+  return (
+    <p className="mark">
+      <svg className="mark-svg" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="14" fill="#1e3b32" />
+        <path d="M33 29.5C41 22 50 16.2 58 14.6C55.6 21.2 50.6 26.4 46.2 30.2C51.2 35.2 56 41.4 58.2 48.6C49.6 44.2 41.2 38.2 33 34.2Z" fill="#c5d5c8" />
+        <path d="M8 50C16 45.5 22.5 38.5 29 33" fill="none" stroke="#f6f3ec" strokeWidth="4.2" strokeLinecap="round" />
+        <path d="M32 30C41 22.2 50.5 16.4 58.4 14.4" fill="none" stroke="#f6f3ec" strokeWidth="4.2" strokeLinecap="round" />
+        <path d="M32 34.4C41 39.2 50.8 45.4 58.4 49" fill="none" stroke="#f6f3ec" strokeWidth="4.2" strokeLinecap="round" />
+        <circle cx="30.2" cy="32.2" r="5" fill="#c4843a" />
+      </svg>
+      <span>
+        Trajectory
+        <small>Studio</small>
+      </span>
+    </p>
+  );
+}

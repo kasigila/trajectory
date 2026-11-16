@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DISCLAIMER, PRIVACY, TAGLINE, TERMS } from "../copy";
 import { acceptGate, signIn, useDb } from "../state/store";
+import { Logo } from "../components/Logo";
 import { Button, Disclosure, Field, Notice } from "../components/ui";
 
 export function Gate() {
@@ -11,7 +12,7 @@ export function Gate() {
   if (!db.viewer.adultOk) {
     return (
       <main className="gate">
-        <p className="mark">Trajectory</p>
+        <Logo />
         <p className="tagline">{TAGLINE}</p>
         <h1>A studio for dated body-weight scenarios.</h1>
         <p className="lede">Plan intake and activity across time, edit a day, and see the Hall trajectory with a sensitivity range. It is not a diet tracker and not a medical device.</p>
@@ -37,7 +38,7 @@ export function Gate() {
   }
   return (
     <main className="gate">
-      <p className="mark">Trajectory</p>
+      <Logo />
       <h1>Open a local session</h1>
       <p>These sessions live in this browser. There is no email sign-in and no password reset.</p>
       {db.accounts.map((account) => (
