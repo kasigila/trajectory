@@ -2,7 +2,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? "/trajectory/" : "/",
   plugins: [react()],
   server: { host: "0.0.0.0", port: 5173, strictPort: true },
   preview: { host: "0.0.0.0", port: 5173, strictPort: true },
@@ -10,4 +11,4 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts"],
   },
-});
+}));
