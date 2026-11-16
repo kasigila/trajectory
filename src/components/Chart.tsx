@@ -3,6 +3,7 @@ import { centralCrossing } from "../model/crossing";
 import { formatDate } from "../model/dates";
 import { trendNote, weeklyPoints } from "../model/trend-note";
 import { formatKg, formatKcal, round1 } from "../model/units";
+import { weighInsFar } from "../format";
 
 export interface SeriesPoint {
   date: string;
@@ -35,6 +36,7 @@ interface Props {
   cycleDates?: string[];
   today?: string | null;
   goalKg?: number | null;
+  goalDate?: string | null;
   goalLabel?: string;
   milestones?: { date: string; label: string }[];
   unit: "kg" | "lb";
@@ -219,6 +221,12 @@ export function TrajectoryChart(props: Props) {
           {props.goalKg != null && !props.hideAbsolute && inScale(plot(props.goalKg)) ? (
             <line x1={PAD.l} x2={W - PAD.r} y1={yOf(props.goalKg)} y2={yOf(props.goalKg)} className="goal" />
           ) : null}
+          {props.goalDate && dates.length && props.goalDate >= dates[0] && props.goalDate <= dates[dates.length - 1] ? (
+            <g>
+              <line x1={xOf(props.goalDate)} x2={xOf(props.goalDate)} y1={PAD.t} y2={H - PAD.b} className="goal" />
+              <text x={xOf(props.goalDate) + 4} y={PAD.t + 28} className="milestone-label">Target date</text>
+            </g>
+          ) : null}
           {props.trend && props.trend.length > 1 ? <path d={linePath(props.trend.map((p) => [xOf(p.date), yOf(p.kg)]))} className="trend" /> : null}
           {props.series.map((series, index) => (
             <path key={series.id} d={linePath(series.points.map((p) => [xOf(p.date), yOf(p.kg)]))} className={`series series-${index}`} style={{ strokeDasharray: series.dash }} />
@@ -269,7 +277,7 @@ export function TrajectoryChart(props: Props) {
       </div>
       {noteStatus ? <p className="fine" role="status">{noteStatus}</p> : null}
       {offScaleObservations.length ? (
-        <p className="fine">{offScaleObservations.length} weigh-in{offScaleObservations.length === 1 ? "" : "s"} sit far from this forecast, so the axis stays on the projection. Those readings remain in the table.</p>
+        <p className="fine">{weighInsFar(offScaleObservations.length)}</p>
       ) : null}
       <ul className="legend">
         {props.series.map((series, index) => (
@@ -295,7 +303,7 @@ export function TrajectoryChart(props: Props) {
         ) : null}
         {props.goalKg != null ? (
           <li>
-            <i className="swatch goal" /> {props.goalLabel || "Chart marker"}, not a recommendation
+            <i className="swatch goal" /> {props.goalLabel || "Chart marker"}{props.goalDate ? `, target date ${formatDate(props.goalDate, props.dateStyle ?? "dmy")}` : ""}, not a recommendation
           </li>
         ) : null}
       </ul>
@@ -357,8 +365,12 @@ export function TrajectoryChart(props: Props) {
 function crossingSentence(props: Props, targetKg: number) {
   const series = props.series[0];
   const hit = series ? centralCrossing(series.points.map((point) => ({ date: point.date, centralKg: point.kg })), targetKg) : null;
-  if (!hit) return "The central series does not reach this chart marker inside the saved horizon. No scale date is promised.";
-  return `The central series reaches this chart marker on ${formatDate(hit.date, props.dateStyle ?? "dmy")}. That is arithmetic on the central series, not a validated prediction of a scale reading.`;
+  const style = props.dateStyle ?? "dmy";
+  const marked = props.goalDate ? ` The marked date is ${formatDate(props.goalDate, style)}.` : "";
+  if (!hit) return `The central series does not reach this chart marker inside the saved horizon.${marked} No scale date is promised.`;
+  const whenHit = formatDate(hit.date, style);
+  const against = !props.goalDate ? "" : hit.date === props.goalDate ? " That is on the marked date." : hit.date < props.goalDate ? " That is before the marked date." : " That is after the marked date.";
+  return `The central series reaches this chart marker on ${whenHit}.${against}${marked} That is arithmetic on the central series, not a validated prediction of a scale reading.`;
 }
 
 async function pictureOf(svg: SVGSVGElement, width: number, height: number): Promise<Blob> {

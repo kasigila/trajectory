@@ -1,4 +1,4 @@
-import { addDays, diffDays } from "./dates";
+import { addDays, diffDays, formatDate } from "./dates";
 import { activityAdjustmentKcal, resolvePlan } from "./engine";
 import { formatKcal, round1 } from "./units";
 import type { ForecastPoint, PlanDiffSpan, ScenarioInputs } from "./types";
@@ -117,6 +117,18 @@ export function explainChange(before: ScenarioInputs | null, beforePoints: Forec
     "The previous version is still saved and was not overwritten.",
   ].join("\n");
   return { narrative: narrative + profileNote, firstDivergence, prefixUnchanged, endDeltaKg, spans };
+}
+
+export function changeLines(change: ChangeExplanation, style: "iso" | "dmy" | "mdy" | "long"): string[] {
+  const spanLines = [...(change.spans ?? [])].reverse().map((span) => {
+    const when = span.start === span.end ? formatDate(span.start, style) : `${formatDate(span.start, style)} through ${formatDate(span.end, style)}, inclusive`;
+    return `${when}: ${span.lines.join("; ")}`;
+  });
+  const prose = (change.narrative ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("What changed") && !/^\d{4}-\d{2}-\d{2}/.test(line) && !line.includes(" more date span"));
+  return spanLines.length ? [...spanLines, ...prose] : prose.length ? prose : [change.narrative || "No change has been described for this version."];
 }
 
 function profileChanged(a: ScenarioInputs, b: ScenarioInputs): boolean {

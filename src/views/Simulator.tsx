@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChangeList } from "../components/ChangeList";
 import { TrajectoryChart } from "../components/Chart";
 import { Timeline } from "../components/Timeline";
 import { Button, Disclosure, Field, Notice } from "../components/ui";
@@ -71,7 +72,7 @@ export function Simulator() {
   const end = addDays(inputs.startDate, inputs.horizonDays - 1);
   const today = todayIso(account.preferences.timeZone);
   const resolved = resolvePlan(inputs);
-  const marks = Object.fromEntries(resolved.map((day) => [day.date, { phase: day.phaseName, override: day.sources.intakeKcal === "override" || day.sources.steps === "override" || day.sources.activityMode === "override" }]));
+  const marks = Object.fromEntries(resolved.map((day) => [day.date, { phase: day.phaseName, override: day.sources.intakeKcal === "override" || day.sources.steps === "override" || day.sources.activityMode === "override", noted: Boolean(day.note) }]));
   const observations = account.observations.filter((obs) => obs.profileId === profile.id && !obs.deletedAt);
   const original = scenario.versions[0];
   const stale = profileStale(profile, version.inputSnapshot.profile);
@@ -164,6 +165,7 @@ export function Simulator() {
         dateStyle={account.preferences.dateFormat}
         today={today}
         goalKg={inputs.goal?.weightKg}
+        goalDate={inputs.goal?.date}
         goalLabel={inputs.goal?.label}
         milestones={inputs.milestones.filter((mark) => !mark.removedAt)}
         cycleDates={account.consents.some((item) => item.consentType === "cycle-context" && item.grantedAt && !item.revokedAt) ? account.cycleLogs.filter((log) => log.profileId === profile.id).map((log) => log.date) : []}
@@ -176,7 +178,7 @@ export function Simulator() {
       />
       <article className="explain">
         <h2>Why the projection looks like this</h2>
-        <p className="change-copy">{previewExplain?.narrative ?? version.change.narrative}</p>
+        <ChangeList change={previewExplain ?? version.change} dateStyle={account.preferences.dateFormat} />
         <p className="fine">
           {MODEL.name}. Generated {stamp(version.forecast.completedAt)}. Short hash {version.inputHash.slice(0, 12)}.
           <button type="button" className="btn quiet" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy full hash</button>
@@ -252,11 +254,11 @@ export function Simulator() {
         >
           {running ? "Working…" : "Preview forecast"}
         </Button>
-        <Button disabled={!draft?.past.length} onClick={() => { undoDraft(account.id, scenario.id); setPreview(null); }}>
-          Undo
+        <Button disabled={!draft?.past.length} onClick={() => { undoDraft(account.id, scenario.id); setPreview(null); setMessage("Undid the last draft edit. Save a version when you want to keep what remains."); }}>
+          Undo draft
         </Button>
-        <Button disabled={!draft?.future.length} onClick={() => { redoDraft(account.id, scenario.id); setPreview(null); }}>
-          Redo
+        <Button disabled={!draft?.future.length} onClick={() => { redoDraft(account.id, scenario.id); setPreview(null); setMessage("Redid the draft edit."); }}>
+          Redo draft
         </Button>
         <Button
           disabled={!draft}
@@ -529,8 +531,8 @@ function CopyEditor({ inputs, selection, onInputs }: { inputs: ScenarioInputs; s
   const [status, setStatus] = useState<string | null>(null);
   return (
     <Disclosure title="Copy">
-      <Field label="Copy onto this start date">
-        <input type="date" value={target} onChange={(event) => setTarget(event.target.value)} />
+      <Field label="Copy onto this start date" hint="Year-month-day. Copying onto a phase day asks before it replaces that day.">
+        <input type="date" value={target} onChange={(event) => { setTarget(event.target.value); setConfirm(false); }} />
       </Field>
       {status ? <p role="status">{status}</p> : null}
       {confirm ? <Notice tone="warn">The destination already has edits or a phase. Copy again to replace those dates.</Notice> : null}
@@ -554,7 +556,8 @@ function CopyEditor({ inputs, selection, onInputs }: { inputs: ScenarioInputs; s
       const to = addDays(target, i);
       const source = resolveDay(inputs, from);
       const destination = resolveDay(inputs, to);
-      if (next.overrides.some((item) => item.date === to) || destination.sources.intakeKcal === "phase") replaced = true;
+      const inPhase = inputs.phases.some((phase) => to >= phase.start && to <= phase.end);
+      if (next.overrides.some((item) => item.date === to) || inPhase || destination.phaseName) replaced = true;
       next.overrides = next.overrides.filter((item) => item.date !== to);
       next.overrides.push({
         date: to,
@@ -577,7 +580,7 @@ function CopyEditor({ inputs, selection, onInputs }: { inputs: ScenarioInputs; s
     next.overrides.sort((a, b) => a.date.localeCompare(b.date));
     onInputs(next);
     setConfirm(false);
-    setStatus(`Copied ${count} day${count === 1 ? "" : "s"} onto the draft. Save a version when you want to keep it.`);
+    setStatus(replaced ? `Copied ${count} day${count === 1 ? "" : "s"} over a phase or an existing edit. Undo draft is below the chart if you want the previous draft back.` : `Copied ${count} day${count === 1 ? "" : "s"} onto the draft. Save a version when you want to keep it.`);
   }
 }
 
@@ -585,12 +588,16 @@ function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: 
   const [label, setLabel] = useState("Marker");
   const [date, setDate] = useState(inputs.startDate);
   const [goal, setGoal] = useState(inputs.goal?.weightKg?.toString() ?? "");
+  const [goalDate, setGoalDate] = useState(inputs.goal?.date ?? "");
   const [status, setStatus] = useState<string | null>(null);
   return (
     <Disclosure title="Chart marker and notes">
       <p className="fine">A chart marker is an annotation on the drawing. It is not the reference weight the Hall model starts from, and the app will not build a plan to reach it.</p>
       <Field label="Chart marker, kg">
         <input value={goal} onChange={(event) => { setGoal(event.target.value); setStatus(null); }} />
+      </Field>
+      <Field label="Target date" hint="Optional. Year-month-day. A mark on the chart, not a date the model is fitted to.">
+        <input type="date" value={goalDate} onChange={(event) => { setGoalDate(event.target.value); setStatus(null); }} />
       </Field>
       {status ? <p role="status">{status}</p> : null}
       <Button
@@ -600,8 +607,8 @@ function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: 
             setStatus(`A chart marker must be between ${LIMITS.weightKg[0]} and ${LIMITS.weightKg[1]} kg, or blank to remove it. Nothing was saved.`);
             return;
           }
-          onInputs({ ...inputs, goal: weightKg == null ? null : { weightKg, date: null, label: "Chart marker" } });
-          setStatus(weightKg == null ? "Chart marker removed from the draft." : "Chart marker saved on the draft. It does not change the reference weight.");
+          onInputs({ ...inputs, goal: weightKg == null ? null : { weightKg, date: goalDate || null, label: "Chart marker" } });
+          setStatus(weightKg == null ? "Chart marker removed from the draft." : `Chart marker ${weightKg} kg${goalDate ? ` on ${goalDate}` : ""} saved on the draft. It does not change the reference weight.`);
         }}
       >
         Save chart marker on draft
@@ -617,8 +624,8 @@ function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: 
         ))}
       </ul>
       <Field label="Milestone label"><input value={label} onChange={(event) => setLabel(event.target.value)} /></Field>
-      <Field label="Milestone date"><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
-      <Button onClick={() => { onInputs({ ...inputs, milestones: [...inputs.milestones, { id: crypto.randomUUID(), date, label: label.trim() || "Milestone" }] }); setLabel(""); setStatus("Milestone added to the draft and drawn on the chart."); }}>Add milestone</Button>
+      <Field label="Milestone date" hint="Year-month-day. The milestone is a label on the chart."><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+      <Button onClick={() => { onInputs({ ...inputs, milestones: [...inputs.milestones, { id: crypto.randomUUID(), date, label: label.trim() || "Milestone" }] }); setLabel(""); setStatus(`Milestone ${label.trim() || "Milestone"} on ${date} saved on the draft and drawn on the chart.`); }}>Add milestone</Button>
       <Horizon inputs={inputs} onInputs={onInputs} />
     </Disclosure>
   );
@@ -627,20 +634,24 @@ function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: 
 function Horizon({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: (inputs: ScenarioInputs) => void }) {
   const [days, setDays] = useState(String(inputs.horizonDays));
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
   return (
     <div>
       <Field label="Horizon, local days" hint={`Whole days from ${LIMITS.horizonMin} to ${LIMITS.horizonMax}. Past ${LIMITS.horizonWarnAfter} days, the view is an unvalidated extrapolation.`}>
         <input value={days} onChange={(event) => { setDays(event.target.value); setError(null); }} />
       </Field>
       {error ? <p role="alert">{error}</p> : null}
+      {saved ? <p role="status">{saved}</p> : null}
       <Button onClick={() => {
         const count = Number(days);
         if (!Number.isInteger(count) || count < LIMITS.horizonMin || count > LIMITS.horizonMax) {
           setError(`Enter a whole number from ${LIMITS.horizonMin} to ${LIMITS.horizonMax} days. The horizon was not changed.`);
+          setSaved(null);
           return;
         }
         setError(null);
         onInputs({ ...inputs, horizonDays: count });
+        setSaved(`Horizon of ${count} days saved on the draft.`);
       }}>Apply horizon to draft</Button>
     </div>
   );
@@ -672,13 +683,16 @@ function downloadPhases(inputs: ScenarioInputs) {
 function ScenarioMeta({ accountId, scenarioId, version, name, labels, archived }: { accountId: string; scenarioId: string; version: ScenarioVersion; name: string; labels: string[]; archived: boolean }) {
   const [title, setTitle] = useState(name);
   const [tag, setTag] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   useEffect(() => setTitle(name), [name]);
   return (
     <Disclosure title="Scenario, versions, and assumptions">
       <Field label="Name" hint="Renaming does not recalculate and does not create a version.">
         <input value={title} onChange={(event) => setTitle(event.target.value)} />
       </Field>
-      <Button onClick={() => renameScenario(accountId, scenarioId, title)}>Rename</Button>
+      <Button onClick={() => { renameScenario(accountId, scenarioId, title); setStatus(`Scenario name “${title}” saved. The forecast was not recalculated.`); }}>Rename</Button>
+      {status ? <p role="status">{status}</p> : null}
       <p>Labels: {labels.join(", ") || "None"}. Labels are names you chose. They do not assume a weight goal.</p>
       <Field label="Add label">
         <input value={tag} onChange={(event) => setTag(event.target.value)} />
@@ -688,13 +702,22 @@ function ScenarioMeta({ accountId, scenarioId, version, name, labels, archived }
         <Button onClick={() => void duplicateScenario(accountId, scenarioId, version.id)}>Duplicate this version</Button>
         <Button onClick={() => void rerunLatest(accountId, scenarioId, version.id)}>Recalculate with latest model</Button>
         <Button onClick={() => downloadPhases(version.inputSnapshot)}>Download phase calendar</Button>
-        <Button onClick={() => {
-          if (archived) {
-            setArchived(accountId, scenarioId, false);
-            return;
-          }
-          if (window.confirm("Remove this scenario from the active list? The versions stay on this device and can be restored.")) setArchived(accountId, scenarioId, true);
-        }}>{archived ? "Restore scenario" : "Remove scenario"}</Button>
+        {confirmRemove ? (
+          <span role="status">
+            Remove this scenario from the active list? The versions stay on this device and can be restored.
+            <Button onClick={() => { setArchived(accountId, scenarioId, true); setConfirmRemove(false); setStatus("Scenario removed from the active list. The versions are still on this device."); }}>Remove scenario</Button>
+            <Button onClick={() => setConfirmRemove(false)}>Cancel</Button>
+          </span>
+        ) : (
+          <Button onClick={() => {
+            if (archived) {
+              setArchived(accountId, scenarioId, false);
+              setStatus("Scenario restored to the active list.");
+              return;
+            }
+            setConfirmRemove(true);
+          }}>{archived ? "Restore scenario" : "Remove scenario"}</Button>
+        )}
       </div>
       <ul className="assumptions">
         {version.assumptions.map((line) => (

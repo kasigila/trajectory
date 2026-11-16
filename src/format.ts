@@ -18,6 +18,12 @@ export function energy(kcal: number) {
   return formatKcal(kcal);
 }
 
+export function weighInsFar(count: number): string {
+  const noun = count === 1 ? "weigh-in" : "weigh-ins";
+  const verb = count === 1 ? "sits" : "sit";
+  return `${count} ${noun} ${verb} far from this forecast, so the axis stays on the projection. Those readings remain in the table.`;
+}
+
 export function stamp(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

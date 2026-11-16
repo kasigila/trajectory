@@ -26,6 +26,7 @@ const MORE: Array<{ id: Route; label: string; icon: IconName }> = [
 export function Shell({ route, children }: { route: Route; children: ReactNode }) {
   const { account, profile } = useSession();
   const [more, setMore] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   useEffect(() => {
     if (account) noteRoute(route);
   }, [account, route]);
@@ -65,11 +66,17 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
           </div>
           <div className="top-actions">
             <a href="#/onboarding">New profile</a>
-            <button type="button" className="btn quiet" onClick={() => {
-              if (window.confirm("Sign out of this session? The data stays in this browser. Nothing is uploaded or deleted.")) signOut();
-            }}>
-              Sign out
-            </button>
+            {confirmSignOut ? (
+              <span className="signout-confirm" role="status">
+                Sign out of this session? The data stays on this device. Nothing is uploaded or deleted.
+                <button type="button" className="btn quiet" onClick={() => signOut()}>Sign out</button>
+                <button type="button" className="btn" onClick={() => setConfirmSignOut(false)}>Stay signed in</button>
+              </span>
+            ) : (
+              <button type="button" className="btn quiet" onClick={() => setConfirmSignOut(true)}>
+                Sign out
+              </button>
+            )}
           </div>
         </header>
         {account.isDemo ? <Notice>Sample data, not your measurements. This opens on {profile.label}. Use New profile to enter your own. Numbers stay in this browser.</Notice> : null}

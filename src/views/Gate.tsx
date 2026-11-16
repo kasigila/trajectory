@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DISCLAIMER, PRIVACY, TAGLINE, TERMS } from "../copy";
 import { go } from "../route";
 import { acceptGate, restoreDemo, sessionAccount, signIn, useDb } from "../state/store";
+import { stamp } from "../format";
 import { Logo } from "../components/Logo";
 import { Button, Disclosure, Field, Notice } from "../components/ui";
 
@@ -17,7 +18,7 @@ export function Gate() {
         <p className="tagline">{TAGLINE}</p>
         <h1>A studio for dated body-weight scenarios.</h1>
         <p className="lede">Trajectory forecasts an adult’s weight from a plan you write, using the published Hall model. Your numbers stay in this browser. It is not a diet tracker and not a medical device.</p>
-        {db.deletionReceipt ? <Notice>Local data for “{db.deletionReceipt.label}” was removed on {db.deletionReceipt.at}. This build has no server backup.</Notice> : null}
+        {db.deletionReceipt ? <Notice>Local data for “{db.deletionReceipt.label}” was removed on {stamp(db.deletionReceipt.at)}. This build has no server backup.</Notice> : null}
         <Field label="Your date of birth" hint="Used only to enforce the 18+ limit. Use the calendar. Your profile can use a different date. Health-data permission is not part of this step.">
           <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
         </Field>

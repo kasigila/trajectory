@@ -15,6 +15,7 @@ import {
   deleteProfile,
   downloadBackup,
   importLocalAccount,
+  listLocalSnapshots,
   recordExport,
   restoreDemo,
   restoreSnapshot,
@@ -25,6 +26,7 @@ import {
   updateNotifications,
   updatePreferences,
   updateProfile,
+  useDb,
   useSession,
   withdrawUse,
 } from "../state/store";
@@ -138,7 +140,8 @@ export function Settings() {
       <article className="card">
         <h2>Model registry</h2>
         <p>{MODEL.name}</p>
-        <p>ID {MODEL.id} · version {MODEL.version} · engine {MODEL.engineBuild}</p>
+        <p>Hall model, Lancet 2011. App version {MODEL.engineBuild}.</p>
+        <p className="fine">Stored ids, for a file comparison: {MODEL.id} · {MODEL.version} · {MODEL.engineBuild}</p>
         <p>{MODEL.shortCitation}. These are the published adult equations. This build is not a clinically validated medical device. Older saved runs keep the model id they were generated with.</p>
         <label className="check"><input type="checkbox" checked={account.featureFlags.advancedMath} onChange={(event) => setFlag(account.id, event.target.checked)} /> Show the parameter list in Insights-sized detail on the report</label>
         <p className="fine">Feature flags: health sync locked off. Hosted accounts locked off. Cycle overlay follows your consent.</p>
@@ -173,7 +176,7 @@ function ProfileForm() {
       {error ? <Notice tone="warn">{error}</Notice> : null}
       {saved ? <p role="status">{saved}</p> : null}
       <div className="grid-2">
-        <Field label="Date of birth"><input type="date" value={birth} onChange={(event) => setBirth(event.target.value)} /></Field>
+        <Field label="Date of birth" hint="Use the calendar. The stored date is year-month-day."><input type="date" value={birth} onChange={(event) => setBirth(event.target.value)} /></Field>
         <Field label="Height, cm"><input value={height} onChange={(event) => setHeight(event.target.value)} /></Field>
         <Field label="Reference weight, kg"><input value={weightKg} onChange={(event) => setWeight(event.target.value)} /></Field>
         <Field label="Maintenance kcal"><input value={maintenance} onChange={(event) => setMaintenance(event.target.value)} /></Field>
@@ -204,7 +207,7 @@ function ProfileForm() {
           energyBasis: profile.energyBasis === "model-estimated" ? "model-estimated" : profile.energyBasis,
         });
         setError(result.ok ? null : result.message);
-        setSaved(result.ok ? "Profile inputs saved. Existing scenarios were not rewritten." : null);
+        setSaved(result.ok ? `Reference weight ${weightKg} kg saved, with the height and other inputs in this form. Existing scenarios were not rewritten.` : null);
       }}>Save profile inputs</Button>
       <p className="fine">Affected scenarios: {account.scenarios.filter((item) => item.profileId === profile.id).map((item) => item.name).join(", ") || "none"}.</p>
     </article>
@@ -265,6 +268,7 @@ function DeleteSession() {
 }
 
 function ImportCard() {
+  const db = useDb();
   const [message, setMessage] = useState<string | null>(null);
   return (
     <article className="card">
@@ -282,7 +286,15 @@ function ImportCard() {
           }
         }} />
       </Field>
-      <Button onClick={() => { const result = restoreSnapshot(); setMessage(result.ok ? "Restored the previous local snapshot." : result.message); }}>Restore previous snapshot</Button>
+      <ul>
+        {listLocalSnapshots().length ? listLocalSnapshots().map((snap, index) => (
+          <li key={`${snap.at}-${index}`}>
+            {snap.at ? stamp(snap.at) : "Previous local snapshot"}
+            <button type="button" onClick={() => { const result = restoreSnapshot(index); setMessage(result.ok ? "Restored that local snapshot. The save you just left is kept in this list." : result.message); }}>Restore this snapshot</button>
+          </li>
+        )) : <li>No earlier snapshot yet. One is kept the next time something is saved.</li>}
+      </ul>
+      {db.recoveryAvailable ? <p>An older or unreadable save was kept as a backup and was not opened. This build only opens schema 2.</p> : null}
       {message ? <p role="status">{message}</p> : null}
     </article>
   );

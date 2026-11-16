@@ -3,7 +3,10 @@ import { TrajectoryChart } from "../components/Chart";
 import { PageTitle } from "../components/Shell";
 import { Button, Notice } from "../components/ui";
 import { energy, stamp, weight, when } from "../format";
+import { todayIso } from "../model/dates";
 import { maintenanceBasis } from "../model/engine";
+import { pickInspectDate } from "../model/inspect-date";
+import { MODEL } from "../model/parameters";
 import { round1 } from "../model/units";
 import { duplicateScenario, useSession } from "../state/store";
 import type { Scenario, ScenarioVersion } from "../state/types";
@@ -19,7 +22,8 @@ export function Compare() {
   const versions = chosen.map((scenario) => scenario.versions.find((item) => item.id === scenario.activeVersionId)).filter((item): item is ScenarioVersion => Boolean(item));
   const dashes = [undefined, "7 5", "2 3"];
   const warnings = alignmentWarnings(versions);
-  const focus = date || versions[0]?.forecast.points[0]?.date || "";
+  const today = todayIso(account.preferences.timeZone);
+  const focus = date || pickInspectDate(versions.map((version) => version.forecast.points.map((point) => point.date)), today);
   return (
     <section>
       <PageTitle kicker="Compare" title="Plans side by side" lede="Differences are between Hall model runs. They are not guaranteed outcomes." />
@@ -72,7 +76,7 @@ export function Compare() {
       )}
       <p className="fine">Sensitivity ranges are in the table below so several shaded bands do not hide one another. Line style differs as well as colour.</p>
       <FieldDate date={focus} onChange={setDate} />
-      {focus && versions.length >= 2 ? <Delta versions={versions} names={chosen.map((item) => item.name)} date={when(focus, account.preferences)} unit={account.preferences.unit} hide={account.preferences.hideWeight} /> : null}
+      {focus && versions.length >= 2 ? <Delta versions={versions} names={chosen.map((item) => item.name)} iso={focus} label={when(focus, account.preferences)} unit={account.preferences.unit} hide={account.preferences.hideWeight} /> : null}
       <div className="table-wrap">
         <table>
           <caption>Assumptions for the compared versions</caption>
@@ -84,7 +88,7 @@ export function Compare() {
           </thead>
           <tbody>
             <tr><th>Version</th>{versions.map((version) => <td key={version.id}>{version.versionNumber}</td>)}</tr>
-            <tr><th>Model</th>{versions.map((version) => <td key={version.id}>{version.modelId} {version.modelVersion}</td>)}</tr>
+            <tr><th>Model</th>{versions.map((version) => <td key={version.id}>{version.modelId === MODEL.id ? `Hall model, Lancet 2011` : `${version.modelId} ${version.modelVersion}`}</td>)}</tr>
             <tr><th>Generated</th>{versions.map((version) => <td key={version.id}>{stamp(version.forecast.completedAt)}</td>)}</tr>
             <tr><th>Start</th>{versions.map((version) => <td key={version.id}>{when(version.inputSnapshot.startDate, account.preferences)}</td>)}</tr>
             <tr><th>Horizon</th>{versions.map((version) => <td key={version.id}>{version.inputSnapshot.horizonDays} inclusive days</td>)}</tr>
@@ -130,13 +134,13 @@ function FieldDate({ date, onChange }: { date: string; onChange: (value: string)
   );
 }
 
-function Delta({ versions, names, date, unit, hide }: { versions: ScenarioVersion[]; names: string[]; date: string; unit: "kg" | "lb"; hide: boolean }) {
-  const a = versions[0].forecast.points.find((point) => point.date === date);
-  const b = versions[1].forecast.points.find((point) => point.date === date);
+function Delta({ versions, names, iso, label, unit, hide }: { versions: ScenarioVersion[]; names: string[]; iso: string; label: string; unit: "kg" | "lb"; hide: boolean }) {
+  const a = versions[0].forecast.points.find((point) => point.date === iso);
+  const b = versions[1].forecast.points.find((point) => point.date === iso);
   if (!a || !b) return <p>That date is not on both runs. The chart stays aligned to the calendar.</p>;
   const delta = a.centralKg - b.centralKg;
   const shown = hide ? "a hidden absolute difference" : `${round1(Math.abs(unit === "lb" ? delta * 2.2046226218 : delta)).toFixed(1)} ${unit}`;
-  return <p>On {date}, {names[0]} minus {names[1]} is {shown} on the central estimates. This is a modelled difference, not a guaranteed outcome.</p>;
+  return <p>On {label}, {names[0]} minus {names[1]} is {shown} on the central estimates. This is a modelled difference, not a guaranteed outcome.</p>;
 }
 
 function basisName(value: string) {

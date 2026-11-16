@@ -226,7 +226,7 @@ function phoneScenario() {
       },
       idempotencyKey: "phone",
       editKind: "initial",
-      change: { summary: "Phone check", fields: [] },
+      change: { narrative: "Phone check.", firstDivergence: null, prefixUnchanged: true, endDeltaKg: null, spans: [] },
     }],
   };
 }

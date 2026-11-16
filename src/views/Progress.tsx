@@ -4,11 +4,12 @@ import { PageTitle } from "../components/Shell";
 import { Button, Field, Notice } from "../components/ui";
 import { energy, stamp, weight, when } from "../format";
 import { parseCsv, parseLooseDate, parseNumber, type DateOrder } from "../model/csv";
+import { importStatus } from "../model/import-status";
 import { todayIso } from "../model/dates";
 import { LIMITS } from "../model/parameters";
 import { TREND_DESCRIPTION, smoothObservations } from "../model/trend";
 import { kgToLb, lbToKg, round1 } from "../model/units";
-import { addComposition, addObservation, addOtherMeasurement, commitImport, deleteObservation, restoreObservation, updateObservation, updatePreferences, useSession } from "../state/store";
+import { addComposition, addObservation, addOtherMeasurement, commitImport, deleteObservation, restoreObservation, setReadingCalibration, updateObservation, updatePreferences, useSession } from "../state/store";
 
 const SAMPLE = `date,weight,unit,note
 2026-09-15,86.6,kg,home scale
@@ -54,7 +55,7 @@ export function Progress() {
       <p className="fine">{TREND_DESCRIPTION}</p>
       {message ? <p role="status">{message}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
-      <WeighInForm paused={account.preferences.pauseTracking} onSave={(value, unit, date, time, note) => {
+      <WeighInForm paused={account.preferences.pauseTracking} onSave={(value, unit, date, time, note, exclude) => {
         const kg = unit === "lb" ? lbToKg(value) : value;
         const result = addObservation(account.id, {
           profileId: profile.id,
@@ -69,6 +70,7 @@ export function Progress() {
           sourceRecordId: null,
           importBatchId: null,
           note,
+          excludeFromCalibration: exclude,
         });
         if (!result.ok) {
           setError(result.message);
@@ -81,13 +83,16 @@ export function Progress() {
       <h2>History</h2>
       <ul className="plain">
         {active.map((obs) => (
-          <ObservationRow key={obs.id} id={obs.id} label={`${when(obs.localDate, account.preferences)} ${obs.localTime} · ${weight(obs.valueKg, account.preferences)} · ${obs.source}${obs.note ? ` · ${obs.note}` : ""}`} corrections={obs.corrections.length} initialValue={String(round1(account.preferences.unit === "lb" ? kgToLb(obs.valueKg) : obs.valueKg))} initialNote={obs.note} onSave={(value, note) => {
+          <ObservationRow key={obs.id} id={obs.id} label={`${when(obs.localDate, account.preferences)} ${obs.localTime} · ${weight(obs.valueKg, account.preferences)} · ${obs.source}${obs.excludeFromCalibration ? " · left out of calibration" : ""}${obs.note ? ` · ${obs.note}` : ""}`} corrections={obs.corrections.length} initialValue={String(round1(account.preferences.unit === "lb" ? kgToLb(obs.valueKg) : obs.valueKg))} initialNote={obs.note} excluded={Boolean(obs.excludeFromCalibration)} onCalibration={() => {
+            const result = setReadingCalibration(account.id, obs.id, !obs.excludeFromCalibration);
+            if (!result.ok) setError(result.message);
+            else setMessage(obs.excludeFromCalibration ? "Reading included in calibration again. It was already on the chart. The forecast was not changed." : "Reading left out of calibration. It stays on the chart. The forecast was not changed.");
+          }} onSave={(value, note) => {
             const kg = account.preferences.unit === "lb" ? lbToKg(value) : value;
             const result = updateObservation(account.id, obs.id, kg, note);
             if (!result.ok) setError(result.message);
             else setMessage("Reading updated. Earlier value kept in its correction history. The forecast was not changed.");
           }} onDelete={() => {
-            if (!window.confirm("Remove this weigh-in from the chart? You can restore it afterward. The forecast is not changed.")) return;
             deleteObservation(account.id, obs.id);
             setMessage("Weigh-in removed from the chart. Restore it under Removed readings. The forecast was not changed.");
           }} />
@@ -96,6 +101,7 @@ export function Progress() {
       <details>
         <summary>Removed readings</summary>
         <ul>
+          {observations.filter((obs) => obs.deletedAt).length ? null : <li>No removed readings.</li>}
           {observations.filter((obs) => obs.deletedAt).map((obs) => (
             <li key={obs.id}>
               {when(obs.localDate, account.preferences)} · {weight(obs.valueKg, account.preferences)} · removed {stamp(obs.deletedAt ?? "")}
@@ -104,7 +110,7 @@ export function Progress() {
           ))}
         </ul>
       </details>
-      <CsvImport paused={account.preferences.pauseTracking} timeZone={account.preferences.timeZone} referenceKg={profile.referenceWeightKg} existingDates={active.map((obs) => obs.localDate)} onCommit={async (rows, text) => {
+      <CsvImport paused={account.preferences.pauseTracking} timeZone={account.preferences.timeZone} referenceKg={profile.referenceWeightKg} existing={active.map((obs) => ({ date: obs.localDate, kg: obs.valueKg }))} onCommit={async (rows, text) => {
         const result = await commitImport(account.id, { profileId: profile.id, timeZone: account.preferences.timeZone, sourceLabel: "csv", fileText: text, rows });
         if (!result.ok) {
           setError(result.message);
@@ -123,19 +129,21 @@ export function Progress() {
   );
 }
 
-function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: number, unit: "kg" | "lb", date: string, time: string, note: string) => boolean }) {
+function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: number, unit: "kg" | "lb", date: string, time: string, note: string, exclude: boolean) => boolean }) {
   const [value, setValue] = useState("");
   const [unit, setUnit] = useState<"kg" | "lb">("kg");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("07:00");
   const [note, setNote] = useState("");
+  const [exclude, setExclude] = useState(false);
   if (paused) return <p>The entry form is hidden while tracking is paused.</p>;
   return (
     <form className="card" onSubmit={(event) => {
       event.preventDefault();
-      if (onSave(Number(value), unit, date, time, note)) {
+      if (onSave(Number(value), unit, date, time, note, exclude)) {
         setValue("");
         setNote("");
+        setExclude(false);
       }
     }}>
       <h2>Add a weigh-in</h2>
@@ -146,13 +154,15 @@ function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: numb
         <Field label="Time"><input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></Field>
       </div>
       <Field label="Note"><input value={note} onChange={(event) => setNote(event.target.value)} /></Field>
+      <label className="check"><input type="checkbox" checked={exclude} onChange={(event) => setExclude(event.target.checked)} /> Different conditions. Leave this reading out of calibration. It still appears on the chart.</label>
       <Button variant="primary" type="submit">Save reading</Button>
     </form>
   );
 }
 
-function ObservationRow({ label, corrections, initialValue, initialNote, onSave, onDelete }: { id: string; label: string; corrections: number; initialValue: string; initialNote: string; onSave: (value: number, note: string) => void; onDelete: () => void }) {
+function ObservationRow({ label, corrections, initialValue, initialNote, excluded, onCalibration, onSave, onDelete }: { id: string; label: string; corrections: number; initialValue: string; initialNote: string; excluded: boolean; onCalibration: () => void; onSave: (value: number, note: string) => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [value, setValue] = useState(initialValue);
   const [note, setNote] = useState(initialNote);
   return (
@@ -160,7 +170,16 @@ function ObservationRow({ label, corrections, initialValue, initialNote, onSave,
       {label}
       {corrections ? ` · ${corrections} correction${corrections === 1 ? "" : "s"}` : ""}
       <button type="button" onClick={() => setOpen((v) => !v)}>Edit</button>
-      <button type="button" onClick={onDelete}>Remove</button>
+      <button type="button" onClick={onCalibration}>{excluded ? "Use in calibration" : "Leave out of calibration"}</button>
+      {confirming ? (
+        <span role="status">
+          Remove this weigh-in from the chart? You can restore it afterward. The forecast is not changed.
+          <button type="button" onClick={() => { onDelete(); setConfirming(false); }}>Remove reading</button>
+          <button type="button" onClick={() => setConfirming(false)}>Cancel</button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => setConfirming(true)}>Remove</button>
+      )}
       {open ? (
         <div className="grid-2">
           <input aria-label="Corrected value" value={value} onChange={(event) => setValue(event.target.value)} />
@@ -172,7 +191,7 @@ function ObservationRow({ label, corrections, initialValue, initialNote, onSave,
   );
 }
 
-function CsvImport({ paused, existingDates, referenceKg, onCommit }: { paused: boolean; timeZone: string; existingDates: string[]; referenceKg: number; onCommit: (rows: { localDate: string; localTime: string; value: number; unit: "kg" | "lb"; note: string; sourceRecordId: string }[], text: string) => Promise<boolean> }) {
+function CsvImport({ paused, existing, referenceKg, onCommit }: { paused: boolean; timeZone: string; existing: { date: string; kg: number }[]; referenceKg: number; onCommit: (rows: { localDate: string; localTime: string; value: number; unit: "kg" | "lb"; note: string; sourceRecordId: string }[], text: string) => Promise<boolean> }) {
   const [text, setText] = useState("");
   const [order, setOrder] = useState<DateOrder>("ymd");
   const [dateCol, setDateCol] = useState(0);
@@ -188,11 +207,12 @@ function CsvImport({ paused, existingDates, referenceKg, onCommit }: { paused: b
     const value = parseNumber(row[weightCol] ?? "");
     const unitText = (row[unitCol] ?? "").toLowerCase();
     const unit = unitText.includes("lb") ? "lb" : unitText.includes("kg") ? "kg" : fallback;
-    const duplicate = date ? existingDates.includes(date) : false;
     const kg = value == null ? null : unit === "lb" ? lbToKg(value) : value;
+    const sameDay = Boolean(date && existing.some((item) => item.date === date));
+    const sameReading = Boolean(date && kg != null && existing.some((item) => item.date === date && Math.abs(item.kg - kg) < 0.05));
     const far = kg != null && Math.abs(kg - referenceKg) > Math.max(8, referenceKg * 0.15);
     const error = !date ? "Date not recognised" : value == null ? "Weight not numeric" : "";
-    return { index, date, value, unit, note: row[noteCol] ?? "", duplicate, far, error, sourceRecordId: `row-${index + 2}` };
+    return { index, date, value, unit, note: row[noteCol] ?? "", sameDay, sameReading, far, error, sourceRecordId: `row-${index + 2}` };
   });
   return (
     <div className="card">
@@ -221,16 +241,16 @@ function CsvImport({ paused, existingDates, referenceKg, onCommit }: { paused: b
               <tbody>
                 {preview.map((row) => (
                   <tr key={row.index}>
-                    <td><input type="checkbox" checked={picked[row.index] ?? (!row.error && !row.far)} disabled={Boolean(row.error)} onChange={(event) => setPicked({ ...picked, [row.index]: event.target.checked })} /></td>
+                    <td><input type="checkbox" checked={picked[row.index] ?? (!row.error && !row.far && !row.sameReading)} disabled={Boolean(row.error)} onChange={(event) => setPicked({ ...picked, [row.index]: event.target.checked })} /></td>
                     <td>{row.date ?? "—"}</td>
                     <td>{row.value ?? "—"} {row.unit}</td>
-                    <td>{row.error || (row.far ? "Far from the profile reference weight. Leave it unchecked unless you mean to import it. The chart axis will not stretch to it." : row.duplicate ? "Same calendar day already has a reading. You can still import it as an additional reading." : "Ready")}</td>
+                    <td>{importStatus(row)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <Button variant="primary" onClick={() => void onCommit(preview.filter((row) => (picked[row.index] ?? (!row.error && !row.far)) && row.date && row.value != null).map((row) => ({ localDate: row.date!, localTime: "07:00", value: row.value!, unit: row.unit, note: row.note, sourceRecordId: row.sourceRecordId })), text).then((ok) => { if (ok) { setText(""); setPicked({}); } })}>
+          <Button variant="primary" onClick={() => void onCommit(preview.filter((row) => (picked[row.index] ?? (!row.error && !row.far && !row.sameReading)) && row.date && row.value != null).map((row) => ({ localDate: row.date!, localTime: "07:00", value: row.value!, unit: row.unit, note: row.note, sourceRecordId: row.sourceRecordId })), text).then((ok) => { if (ok) { setText(""); setPicked({}); } })}>
             Import selected rows
           </Button>
         </>

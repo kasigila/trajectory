@@ -61,15 +61,16 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
         <>
           <p>Trajectory shows how a plan you write could move a Hall-model weight trajectory. It cannot tell you what to eat or how to train, and it will not change the plan for you.</p>
           <p>{DISCLAIMER}</p>
+          <label className="check"><input type="checkbox" checked={Boolean(draft.purposeAccepted)} onChange={(event) => patch({ purposeAccepted: event.target.checked })} /> I have read this. Use this purpose.</label>
         </>
       ) : null}
       {draft.step === 1 ? (
         <>
           <Field label="Profile date of birth" hint="Age is used in the Jackson body-fat estimate and in Mifflin–St Jeor. Use the calendar. The stored date is year-month-day. This date is the profile’s, separate from the 18+ check.">
-            <input type="date" value={draft.birthDate} onChange={(event) => patch({ birthDate: event.target.value })} />
+            <input type="date" value={draft.birthDate} onChange={(event) => patch({ birthDate: event.target.value, eligibilityAccepted: true })} />
           </Field>
           <Field label="Excluded context" hint="If one of these applies, the app will not make a personalized forecast.">
-            <select value={draft.excludedContext} onChange={(event) => patch({ excludedContext: event.target.value as OnboardingDraft["excludedContext"] })}>
+            <select value={draft.excludedContext} onChange={(event) => patch({ excludedContext: event.target.value as OnboardingDraft["excludedContext"], eligibilityAccepted: true })}>
               <option value="none">None of these</option>
               <option value="pregnancy">Pregnancy</option>
               <option value="breastfeeding">Breastfeeding</option>
@@ -78,12 +79,14 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
               <option value="other">Another excluded context</option>
             </select>
           </Field>
+          <label className="check"><input type="checkbox" checked={Boolean(draft.eligibilityAccepted)} onChange={(event) => patch({ eligibilityAccepted: event.target.checked })} /> These eligibility answers are the ones I mean.</label>
         </>
       ) : null}
       {draft.step === 2 ? (
         <>
-          <Field label="Weight unit"><select value={draft.unit} onChange={(event) => patch({ unit: event.target.value as "kg" | "lb" })}><option value="kg">Kilograms</option><option value="lb">Pounds</option></select></Field>
-          <Field label="Height unit"><select value={draft.lengthUnit} onChange={(event) => patch({ lengthUnit: event.target.value as "cm" | "ft" })}><option value="cm">Centimetres</option><option value="ft">Feet and inches</option></select></Field>
+          <Field label="Weight unit"><select value={draft.unit} onChange={(event) => patch({ unit: event.target.value as "kg" | "lb", unitsAccepted: true })}><option value="kg">Kilograms</option><option value="lb">Pounds</option></select></Field>
+          <Field label="Height unit"><select value={draft.lengthUnit} onChange={(event) => patch({ lengthUnit: event.target.value as "cm" | "ft", unitsAccepted: true })}><option value="cm">Centimetres</option><option value="ft">Feet and inches</option></select></Field>
+          <label className="check"><input type="checkbox" checked={Boolean(draft.unitsAccepted)} onChange={(event) => patch({ unitsAccepted: event.target.checked })} /> Use these units.</label>
         </>
       ) : null}
       {draft.step === 3 ? (
@@ -225,6 +228,9 @@ function intakeHint(value: string) {
 }
 
 function stepError(draft: OnboardingDraft): string | null {
+  if (draft.step === 0 && !draft.purposeAccepted) return "Confirm the purpose before continuing. Nothing was assumed.";
+  if (draft.step === 1 && !draft.eligibilityAccepted) return "Confirm these eligibility answers before continuing. The preselected answers are not used until you do.";
+  if (draft.step === 2 && !draft.unitsAccepted) return "Confirm these units before continuing. The preselected units are not used until you do.";
   if (draft.step === 1) {
     if (!isIsoDate(draft.birthDate)) return "Enter a date of birth before continuing.";
     if (ageOn(draft.birthDate, todayIso("UTC")) < 18) return "A profile under 18 cannot be saved. The date was not changed.";

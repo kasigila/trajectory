@@ -26,6 +26,7 @@ import type {
   WeightObservation,
 } from "./types";
 import { EXPORT_FORMAT, refillForecasts } from "./export";
+import { acceptStoredDatabase } from "./schema";
 import { buildVersion } from "./version";
 
 type Memory = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -60,25 +61,50 @@ function emit() {
 }
 
 const SNAPSHOT = "trajectory.v1.snapshot";
+const HISTORY = "trajectory.v1.history";
+
+interface LocalSnap {
+  at: string;
+  body: string;
+}
+
+function readHistory(): LocalSnap[] {
+  try {
+    const raw = storage().getItem(HISTORY);
+    const parsed = raw ? (JSON.parse(raw) as LocalSnap[]) : [];
+    if (Array.isArray(parsed)) return parsed.filter((item) => item && typeof item.body === "string").slice(0, 3);
+  } catch {
+    // A damaged history list is ignored. The current save is left alone.
+  }
+  const legacy = storage().getItem(SNAPSHOT);
+  return legacy ? [{ at: "", body: legacy }] : [];
+}
 
 function persist() {
   const previous = storage().getItem(KEY);
   const { hydrated, ...rest } = state;
   const next = JSON.stringify({ ...rest, hydrated: true });
-  if (previous && previous !== next) storage().setItem(SNAPSHOT, previous);
+  if (previous && previous !== next) {
+    const history = [{ at: new Date().toISOString(), body: previous }, ...readHistory().filter((item) => item.body !== previous)].slice(0, 3);
+    storage().setItem(HISTORY, JSON.stringify(history));
+    storage().setItem(SNAPSHOT, history[0]?.body ?? previous);
+  }
   storage().setItem(KEY, next);
 }
 
-export function restoreSnapshot(): ActionResult {
-  const raw = storage().getItem(SNAPSHOT);
-  if (!raw) return fail("No previous local snapshot is stored yet. Nothing was restored.");
+export function listLocalSnapshots(): { at: string }[] {
+  return readHistory().map((item) => ({ at: item.at }));
+}
+
+export function restoreSnapshot(index = 0): ActionResult {
+  const chosen = readHistory()[index];
+  if (!chosen) return fail("No previous local snapshot is stored yet. Nothing was restored.");
   let parsed: Database;
   try {
-    parsed = JSON.parse(raw) as Database;
-  } catch {
-    return fail("The previous snapshot could not be read. Nothing was restored.");
+    parsed = acceptStoredDatabase(JSON.parse(chosen.body));
+  } catch (error) {
+    return fail(error instanceof Error ? `${error.message} Nothing was restored.` : "The previous snapshot could not be read. Nothing was restored.");
   }
-  if (parsed.schema !== 2 || !Array.isArray(parsed.accounts)) return fail("The previous snapshot is not this storage version. Nothing was restored.");
   state = { ...parsed, hydrated: true };
   persist();
   emit();
@@ -166,9 +192,7 @@ async function hydrateFromStorage() {
     if (!raw) {
       state = await createSeedDatabase();
     } else {
-      const parsed = JSON.parse(raw) as Database;
-      if (parsed.schema !== 2 || !Array.isArray(parsed.accounts)) throw new Error("schema");
-      state = { ...parsed, hydrated: true };
+      state = { ...acceptStoredDatabase(JSON.parse(raw)), hydrated: true };
       state = replaceLoneDemo(state);
     }
     const receipt = storage().getItem(RECEIPT);
@@ -575,7 +599,7 @@ export function touchDraft(accountId: string, scenarioId: string, baseVersionId:
       scenarioId,
       baseVersionId: existing?.baseVersionId ?? baseVersionId,
       inputs: producer(structuredClone(current)),
-      past: existing ? [...existing.past, structuredClone(existing.inputs)].slice(-30) : [],
+      past: [...(existing?.past ?? []), structuredClone(current)].slice(-30),
       future: [],
       updatedAt: nowIso(),
     };
@@ -799,7 +823,7 @@ export async function acceptCalibration(accountId: string, scenarioId: string): 
   const version = scenario?.versions.find((item) => item.id === scenario.activeVersionId);
   if (!account || !scenario || !profile || !version) return fail("Open a saved scenario before calibration.");
   const { proposeCalibration, calibrationAssumptions } = await import("../model/calibrate");
-  const observations = account.observations.filter((obs) => obs.profileId === profile.id && !obs.deletedAt).map((obs) => ({ date: obs.localDate, kg: obs.valueKg }));
+  const observations = account.observations.filter((obs) => obs.profileId === profile.id && !obs.deletedAt && !obs.excludeFromCalibration).map((obs) => ({ date: obs.localDate, kg: obs.valueKg }));
   const proposal = proposeCalibration(version.inputSnapshot, observations);
   if (!proposal.eligible || proposal.proposedMaintenanceKcal == null) return fail(proposal.reason);
   const note = calibrationAssumptions(proposal);
@@ -885,6 +909,16 @@ export function deleteObservation(accountId: string, observationId: string) {
     observations: account.observations.map((obs) => (obs.id === observationId ? { ...obs, deletedAt: nowIso() } : obs)),
     audits: [...account.audits, { id: uid("aud"), at: nowIso(), action: "observation.delete", subject: observationId }].slice(-200),
   }));
+}
+
+export function setReadingCalibration(accountId: string, observationId: string, exclude: boolean): ActionResult {
+  const current = accountById(accountId)?.observations.find((obs) => obs.id === observationId);
+  if (!current || current.deletedAt) return fail("That reading is not active.");
+  mapAccount(accountId, (account) => ({
+    ...account,
+    observations: account.observations.map((obs) => (obs.id === observationId ? { ...obs, excludeFromCalibration: exclude } : obs)),
+  }));
+  return { ok: true };
 }
 
 export function restoreObservation(accountId: string, observationId: string): ActionResult {

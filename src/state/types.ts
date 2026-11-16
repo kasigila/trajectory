@@ -124,6 +124,8 @@ export interface WeightObservation {
   note: string;
   createdAt: string;
   deletedAt: string | null;
+  /** Left out of the retrospective calibration sketch. The reading stays on the chart. */
+  excludeFromCalibration?: boolean;
   corrections: { at: string; previousKg: number; previousNote: string }[];
   syncStatus: "local-only";
 }
@@ -211,6 +213,9 @@ export interface OnboardingDraft {
   intakeKcal: string;
   weekendIntakeKcal: string;
   weekendSteps: string;
+  purposeAccepted?: boolean;
+  eligibilityAccepted?: boolean;
+  unitsAccepted?: boolean;
 }
 
 export interface Account {

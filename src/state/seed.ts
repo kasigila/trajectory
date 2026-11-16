@@ -308,6 +308,9 @@ export function blankOnboarding(timeZoneToday: string): Database["onboarding"] {
     intakeKcal: "",
     weekendIntakeKcal: "",
     weekendSteps: "5000",
+    purposeAccepted: false,
+    eligibilityAccepted: false,
+    unitsAccepted: false,
   };
 }
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChangeList } from "../components/ChangeList";
 import { PageTitle } from "../components/Shell";
 import { Button, Notice } from "../components/ui";
 import { HOW_TO_READ } from "../copy";
@@ -16,12 +17,13 @@ export function Insights() {
   const version = scenario?.versions.find((item) => item.id === scenario.activeVersionId);
   const original = scenario?.versions[0];
   const observations = account.observations.filter((obs) => obs.profileId === profile.id && !obs.deletedAt);
+  const forCalibration = observations.filter((obs) => !obs.excludeFromCalibration);
   const pairs = observations.map((obs) => ({
     date: obs.localDate,
     observed: obs.valueKg,
     forecast: original?.forecast.points.find((point) => point.date === obs.localDate)?.centralKg ?? null,
   }));
-  const proposal = version ? proposeCalibration(version.inputSnapshot, observations.map((obs) => ({ date: obs.localDate, kg: obs.valueKg }))) : null;
+  const proposal = version ? proposeCalibration(version.inputSnapshot, forCalibration.map((obs) => ({ date: obs.localDate, kg: obs.valueKg }))) : null;
   return (
     <section>
       <PageTitle kicker="Insights" title="What the lines mean" lede="Explanations stay descriptive. They do not judge a reading or rewrite a plan." />
@@ -31,7 +33,7 @@ export function Insights() {
       </article>
       <article className="card">
         <h2>Latest saved change</h2>
-        <p className="change-copy">{version?.change.narrative ?? "Save a scenario to see an explanation."}</p>
+        <ChangeList change={version?.change} dateStyle={account.preferences.dateFormat} />
       </article>
       <article className="card">
         <h2>Readings and the original forecast</h2>
