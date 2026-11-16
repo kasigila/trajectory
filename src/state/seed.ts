@@ -272,7 +272,7 @@ export async function createSeedDatabase(): Promise<Database> {
     recoveryAvailable: false,
     viewer: { birthDate: null, adultOk: false, consents: [] },
     sessionAccountId: null,
-    accounts: [await createDemoAccount()],
+    accounts: [],
     onboarding: null,
     deletionReceipt: null,
   };

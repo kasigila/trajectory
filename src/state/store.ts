@@ -130,6 +130,7 @@ async function hydrateFromStorage() {
       const parsed = JSON.parse(raw) as Database;
       if (parsed.schema !== 2 || !Array.isArray(parsed.accounts)) throw new Error("schema");
       state = { ...parsed, hydrated: true };
+      state = replaceLoneDemo(state);
     }
     const receipt = storage().getItem(RECEIPT);
     if (receipt && !state.deletionReceipt) state.deletionReceipt = JSON.parse(receipt);
@@ -177,6 +178,38 @@ function consent(type: ConsentRecord["consentType"], granted: boolean): ConsentR
   };
 }
 
+const PERSONAL_SESSION_NAME = "Your session";
+
+function personalSession(birthDate: string | null): { accounts: Account[]; account: Account; onboarding: OnboardingDraft | null } {
+  const existing = state.accounts.find((account) => !account.isDemo);
+  if (existing) {
+    const onboarding = existing.profiles.length === 0 ? profileDraft(existing, birthDate) : state.onboarding;
+    return { accounts: state.accounts, account: existing, onboarding };
+  }
+  const created = freshAccount(PERSONAL_SESSION_NAME, null);
+  const account = audit(created, "account.create", created.id);
+  return {
+    accounts: [...state.accounts.filter((item) => !item.isDemo), account],
+    account,
+    onboarding: profileDraft(account, birthDate),
+  };
+}
+
+function replaceLoneDemo(db: Database): Database {
+  if (db.accounts.some((account) => !account.isDemo)) return db;
+  if (!db.viewer.adultOk) return { ...db, accounts: [], sessionAccountId: null };
+  const opened = personalSession(db.viewer.birthDate);
+  return { ...db, accounts: opened.accounts, sessionAccountId: opened.account.id, onboarding: opened.onboarding };
+}
+
+function profileDraft(account: Account, birthDate: string | null): OnboardingDraft | null {
+  const draft = blankOnboarding(todayIso(account.preferences.timeZone));
+  if (!draft) return null;
+  draft.birthDate = birthDate && isIsoDate(birthDate) ? birthDate : "";
+  draft.separateAccount = false;
+  return draft;
+}
+
 export function acceptGate(birthDate: string): ActionResult {
   if (!isIsoDate(birthDate)) return fail("Enter a valid date of birth. It is used only to check the 18+ limit.");
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -186,11 +219,13 @@ export function acceptGate(birthDate: string): ActionResult {
     return fail("Trajectory is for adults 18 and older. The studio stays closed.");
   }
   if (age > LIMITS.ageMax) return fail("Check the date of birth. It is outside the range this build can store.");
-  const demo = state.accounts.find((account) => account.isDemo) ?? state.accounts[0];
+  const opened = personalSession(birthDate);
   commit({
     ...state,
+    accounts: opened.accounts,
     viewer: { birthDate, adultOk: true, consents: [consent("terms", true), consent("privacy", true)] },
-    sessionAccountId: demo?.id ?? null,
+    sessionAccountId: opened.account.id,
+    onboarding: opened.onboarding,
   });
   return { ok: true };
 }
@@ -275,6 +310,7 @@ export function startOnboarding(separateAccount: boolean) {
   const draft = blankOnboarding(todayIso(zone));
   if (!draft) return;
   draft.separateAccount = separateAccount;
+  if (state.viewer.birthDate && isIsoDate(state.viewer.birthDate)) draft.birthDate = state.viewer.birthDate;
   commit({ ...state, onboarding: draft });
 }
 
@@ -283,6 +319,7 @@ export async function finishOnboarding(draft: OnboardingDraft, passphrase: strin
   if (!profileResult.ok) return profileResult;
   const { profile, inputs } = profileResult;
   let account = sessionAccount();
+  if (account && account.displayName === PERSONAL_SESSION_NAME) account = { ...account, displayName: profile.label };
   if (draft.separateAccount || !account) {
     if (passphrase.length < 4) return fail("A separate local session needs a passphrase of at least 4 characters.");
     const salt = uid("salt");

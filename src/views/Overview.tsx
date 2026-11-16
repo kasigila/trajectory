@@ -36,7 +36,7 @@ export function Overview() {
           series={[{ id: version.id, label: "Hall projected weight", band: true, points: version.forecast.points.map((point) => ({ date: point.date, kg: point.centralKg, lower: point.lowerKg, upper: point.upperKg, intake: point.intakeKcal, expenditure: point.expenditureKcal })) }]}
         />
       ) : (
-        <p>No forecast yet. The sample plan should already have one.</p>
+        <p>No forecast yet. Save a scenario to see one.</p>
       )}
       <p className="chart-cite">{HALL_CITATION} The shaded band is input sensitivity, not a prediction interval.</p>
       <div className="metrics">

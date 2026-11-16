@@ -142,7 +142,7 @@ export function Settings() {
       <article className="card">
         <h2>Delete</h2>
         <DeleteSession />
-        <Button variant="danger" onClick={() => void deleteDevice().then(() => setMessage("Personal local data was removed from this browser. The sample studio is locked behind the age check again."))}>Delete everything on this device</Button>
+        <Button variant="danger" onClick={() => void deleteDevice().then(() => setMessage("Personal local data was removed from this browser. The age check is required again."))}>Delete everything on this device</Button>
         <Button onClick={() => void restoreDemo().then(() => setMessage("Sample profile restored."))}>Restore sample profile</Button>
         {account.profiles.length > 1 ? <Button variant="danger" onClick={() => { const result = deleteProfile(account.id, profile.id); if (!result.ok) setError(result.message); }}>Delete active profile</Button> : null}
       </article>

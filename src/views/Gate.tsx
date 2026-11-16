@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DISCLAIMER, PRIVACY, TAGLINE, TERMS } from "../copy";
-import { acceptGate, signIn, useDb } from "../state/store";
+import { go } from "../route";
+import { acceptGate, sessionAccount, signIn, useDb } from "../state/store";
 import { Logo } from "../components/Logo";
 import { Button, Disclosure, Field, Notice } from "../components/ui";
 
@@ -16,8 +17,8 @@ export function Gate() {
         <p className="tagline">{TAGLINE}</p>
         <h1>A studio for dated body-weight scenarios.</h1>
         <p className="lede">Plan intake and activity across time, edit a day, and see the Hall trajectory with a sensitivity range. It is not a diet tracker and not a medical device.</p>
-        {db.deletionReceipt ? <Notice>Local data for “{db.deletionReceipt.label}” was removed on {db.deletionReceipt.at}. The fictional sample is available again after the age check. This build has no server backup.</Notice> : null}
-        <Field label="Your date of birth" hint="Used only to enforce the 18+ limit. It is not the sample profile’s date of birth, and health-data permission is not part of this step.">
+        {db.deletionReceipt ? <Notice>Local data for “{db.deletionReceipt.label}” was removed on {db.deletionReceipt.at}. This build has no server backup.</Notice> : null}
+        <Field label="Your date of birth" hint="Used only to enforce the 18+ limit. Your profile can use a different date. Health-data permission is not part of this step.">
           <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
         </Field>
         <Disclosure title="Terms">{TERMS}</Disclosure>
@@ -28,6 +29,7 @@ export function Gate() {
           onClick={() => {
             const result = acceptGate(birthDate);
             if (!result.ok) setError(result.message);
+            else if (!sessionAccount()?.profiles.length) go("onboarding");
           }}
         >
           I am 18 or older and I accept the terms and privacy notice
@@ -53,14 +55,14 @@ export function Gate() {
           }}
         >
           <h2>{account.displayName}</h2>
-          <p>{account.isDemo ? "Sample data. Not your measurements." : "Local session protected by a device passphrase."}</p>
+          <p>{account.isDemo ? "Sample data. Not your measurements." : account.passphraseHash ? "Local session protected by a device passphrase." : "Your session on this browser."}</p>
           {account.passphraseHash ? (
             <Field label="Passphrase">
               <input type="password" value={passwords[account.id] ?? ""} onChange={(event) => setPasswords({ ...passwords, [account.id]: event.target.value })} />
             </Field>
           ) : null}
           <Button variant="primary" type="submit">
-            {account.isDemo ? "Open the demo" : "Unlock"}
+            {account.isDemo ? "Open the demo" : account.passphraseHash ? "Unlock" : "Open"}
           </Button>
         </form>
       ))}

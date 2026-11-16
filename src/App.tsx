@@ -34,7 +34,7 @@ export function App() {
   }, [account?.preferences.theme]);
   if (!db.hydrated) return <main className="gate"><p>Loading the studio…</p></main>;
   if (!db.viewer.adultOk || !account) return <Gate />;
-  if (route === "onboarding") return <Onboarding />;
+  if (route === "onboarding" || account.profiles.length === 0) return <Onboarding />;
   const page = route === "simulator" ? <Simulator /> : route === "compare" ? <Compare /> : route === "progress" ? <Progress /> : route === "insights" ? <Insights /> : route === "connections" ? <Connections /> : route === "settings" ? <Settings /> : route === "report" ? <Report /> : <Overview />;
   return <Shell route={route}>{page}</Shell>;
 }
