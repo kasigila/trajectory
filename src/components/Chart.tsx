@@ -1,0 +1,357 @@
+import { useEffect, useMemo, useState } from "react";
+import { formatDate } from "../model/dates";
+import { formatKg, formatKcal, round1 } from "../model/units";
+
+export interface SeriesPoint {
+  date: string;
+  kg: number;
+  lower?: number;
+  upper?: number;
+  intake?: number;
+  expenditure?: number;
+}
+
+export interface ChartSeries {
+  id: string;
+  label: string;
+  dash?: string;
+  points: SeriesPoint[];
+  band?: boolean;
+}
+
+interface Observation {
+  id: string;
+  date: string;
+  kg: number;
+  source: string;
+}
+
+interface Props {
+  series: ChartSeries[];
+  observations?: Observation[];
+  trend?: { date: string; kg: number }[];
+  cycleDates?: string[];
+  today?: string | null;
+  goalKg?: number | null;
+  goalLabel?: string;
+  milestones?: { date: string; label: string }[];
+  unit: "kg" | "lb";
+  hideAbsolute?: boolean;
+  dateStyle?: "iso" | "dmy" | "mdy" | "long";
+  caption: string;
+  prominent?: boolean;
+}
+
+const W = 800;
+const H = 420;
+const PAD = { l: 64, r: 16, t: 22, b: 40 };
+
+export function TrajectoryChart(props: Props) {
+  const dates = useMemo(() => collectDates(props), [props]);
+  const anchor = props.series[0]?.points[0]?.kg ?? props.observations?.[0]?.kg ?? 0;
+  const plot = (kg: number) => {
+    const value = props.hideAbsolute ? kg - anchor : kg;
+    return props.unit === "lb" ? value * 2.2046226218 : value;
+  };
+  const [focus, setFocus] = useState<string | null>(dates.at(-1) ?? null);
+  useEffect(() => {
+    if (!focus || !dates.includes(focus)) setFocus(dates.at(-1) ?? null);
+  }, [dates, focus]);
+
+  const yValues = [
+    ...props.series.flatMap((series) => series.points.flatMap((p) => [plot(p.kg), p.lower != null ? plot(p.lower) : plot(p.kg), p.upper != null ? plot(p.upper) : plot(p.kg)])),
+    ...(props.observations ?? []).map((o) => plot(o.kg)),
+    ...(props.trend ?? []).map((t) => plot(t.kg)),
+    props.goalKg != null && !props.hideAbsolute ? plot(props.goalKg) : null,
+  ].filter((n): n is number => n != null && Number.isFinite(n));
+  const min = yValues.length ? Math.min(...yValues) : 0;
+  const max = yValues.length ? Math.max(...yValues) : 1;
+  const padY = Math.max(0.4, (max - min) * 0.12);
+  const y0 = min - padY;
+  const y1 = max + padY;
+  const xOf = (date: string) => {
+    if (dates.length < 2) return PAD.l + (W - PAD.l - PAD.r) / 2;
+    const t0 = Date.parse(dates[0] + "T00:00:00Z");
+    const t1 = Date.parse(dates[dates.length - 1] + "T00:00:00Z");
+    const t = Date.parse(date + "T00:00:00Z");
+    return PAD.l + ((t - t0) / (t1 - t0)) * (W - PAD.l - PAD.r);
+  };
+  const yOfPlot = (value: number) => {
+    const plotH = H - PAD.t - PAD.b;
+    return PAD.t + (1 - (value - y0) / (y1 - y0 || 1)) * plotH;
+  };
+  const yOf = (kg: number) => yOfPlot(plot(kg));
+  const ticks = niceTicks(y0, y1, 4);
+  const focusIndex = Math.max(0, dates.indexOf(focus ?? dates[0] ?? ""));
+
+  function move(step: number) {
+    if (!dates.length) return;
+    const next = dates[Math.min(dates.length - 1, Math.max(0, focusIndex + step))];
+    setFocus(next);
+  }
+
+  function nearest(clientX: number, svg: SVGSVGElement) {
+    const rect = svg.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * W;
+    let best = dates[0];
+    let dist = Infinity;
+    for (const date of dates) {
+      const d = Math.abs(xOf(date) - x);
+      if (d < dist) {
+        dist = d;
+        best = date;
+      }
+    }
+    if (best) setFocus(best);
+  }
+
+  const live = describeFocus(props, focus, anchor);
+  const summary = textSummary(props, anchor);
+
+  return (
+    <figure className={props.prominent ? "chart-block chart-hero" : "chart-block"}>
+      <figcaption>
+        <p>{props.caption}</p>
+        <p className="summary">{summary}</p>
+      </figcaption>
+      <div
+        className="chart-frame"
+        tabIndex={0}
+        role="group"
+        aria-label={`${props.caption}. ${summary} Use left and right arrow keys to inspect a date. A data table follows.`}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            move(1);
+          } else if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            move(-1);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            setFocus(dates[0] ?? null);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            setFocus(dates.at(-1) ?? null);
+          }
+        }}
+      >
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          role="presentation"
+          aria-hidden="true"
+          onPointerMove={(event) => nearest(event.clientX, event.currentTarget)}
+        >
+          {ticks.map((tick) => (
+            <g key={tick}>
+              <line x1={PAD.l} x2={W - PAD.r} y1={yOfPlot(tick)} y2={yOfPlot(tick)} className="grid" />
+              <text x={PAD.l - 8} y={yOfPlot(tick) + 4} className="tick">
+                {tick.toFixed(1)}
+              </text>
+            </g>
+          ))}
+          {props.series.filter((series) => series.band).map((series) => (
+            <path key={series.id + "-band"} d={bandPath(series, xOf, yOf)} className="band" />
+          ))}
+          {props.goalKg != null && !props.hideAbsolute ? (
+            <line x1={PAD.l} x2={W - PAD.r} y1={yOf(props.goalKg)} y2={yOf(props.goalKg)} className="goal" />
+          ) : null}
+          {props.trend && props.trend.length > 1 ? <path d={linePath(props.trend.map((p) => [xOf(p.date), yOf(p.kg)]))} className="trend" /> : null}
+          {props.series.map((series, index) => (
+            <path key={series.id} d={linePath(series.points.map((p) => [xOf(p.date), yOf(p.kg)]))} className={`series series-${index}`} style={{ strokeDasharray: series.dash }} />
+          ))}
+          {(props.observations ?? []).map((obs, index) => (
+            <circle key={obs.id} cx={xOf(obs.date) + (index % 3) - 1} cy={yOf(obs.kg)} r="4.2" className="obs" />
+          ))}
+          {(props.cycleDates ?? []).map((date) => (
+            <line key={date} x1={xOf(date)} x2={xOf(date)} y1={PAD.t} y2={H - PAD.b} className="cycle" />
+          ))}
+          {(props.milestones ?? []).map((mark) => (
+            <line key={`${mark.date}-${mark.label}`} x1={xOf(mark.date)} x2={xOf(mark.date)} y1={H - PAD.b} y2={H - PAD.b + 6} className="milestone" />
+          ))}
+          {props.today && dates.length && props.today >= dates[0] && props.today <= dates[dates.length - 1] ? (
+            <g>
+              <line x1={xOf(props.today)} x2={xOf(props.today)} y1={PAD.t} y2={H - PAD.b} className="today" />
+              <text x={xOf(props.today) + 4} y={PAD.t + 12} className="today-label">
+                Today
+              </text>
+            </g>
+          ) : null}
+          {focus ? <line x1={xOf(focus)} x2={xOf(focus)} y1={PAD.t} y2={H - PAD.b} className="focus-line" /> : null}
+          {dates.length ? (
+            <>
+              <text x={PAD.l} y={H - 14} className="tick date">
+                {formatDate(dates[0], props.dateStyle ?? "dmy")}
+              </text>
+              <text x={(PAD.l + W - PAD.r) / 2} y={H - 14} className="tick date mid">
+                {formatDate(dates[Math.floor((dates.length - 1) / 2)], props.dateStyle ?? "dmy")}
+              </text>
+              <text x={W - PAD.r} y={H - 14} className="tick date end">
+                {formatDate(dates[dates.length - 1], props.dateStyle ?? "dmy")}
+              </text>
+            </>
+          ) : null}
+        </svg>
+        <p className="live" aria-live="polite">
+          {live}
+        </p>
+      </div>
+      <ul className="legend">
+        {props.series.map((series, index) => (
+          <li key={series.id}>
+            <i className={`swatch series-${index}`} style={{ borderTopStyle: series.dash ? "dashed" : "solid" }} />
+            {series.label}
+            {series.band ? " with sensitivity range" : ""}
+          </li>
+        ))}
+        {props.trend?.length ? (
+          <li>
+            <i className="swatch trend" /> Trend estimate
+          </li>
+        ) : null}
+        {props.observations?.length ? (
+          <li>
+            <i className="swatch obs" /> Observed weigh-ins
+          </li>
+        ) : null}
+        {props.cycleDates?.length ? (
+          <li>
+            <i className="swatch cycle" /> Cycle context, not used by the model
+          </li>
+        ) : null}
+        {props.goalKg != null ? (
+          <li>
+            <i className="swatch goal" /> {props.goalLabel || "Your reference"}, not a recommendation
+          </li>
+        ) : null}
+      </ul>
+      {props.goalKg != null ? <p className="fine">A crossing date is not shown. This build does not treat the Hall equations as validated for a goal-crossing date.</p> : null}
+      <details className="table-disclosure">
+        <summary>Data table</summary>
+        <div className="table-wrap">
+          <table>
+            <caption>{props.caption}. Values are shown to 0.1 kg so the table does not imply gram-level foresight. The sensitivity columns are a range, not a confidence interval.</caption>
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                {props.series.map((series) => (
+                  <th key={series.id} scope="col">
+                    {series.label}
+                  </th>
+                ))}
+                {props.series.some((s) => s.band) ? (
+                  <>
+                    <th scope="col">Sensitivity low</th>
+                    <th scope="col">Sensitivity high</th>
+                  </>
+                ) : null}
+                <th scope="col">Observed</th>
+                <th scope="col">Trend</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dates.map((date) => (
+                <tr key={date} className={date === focus ? "is-focus" : undefined}>
+                  <th scope="row">{formatDate(date, props.dateStyle ?? "dmy")}</th>
+                  {props.series.map((series) => {
+                    const point = series.points.find((item) => item.date === date);
+                    return <td key={series.id}>{point ? cell(point.kg, props, anchor) : "—"}</td>;
+                  })}
+                  {props.series.some((s) => s.band) ? (
+                    <>
+                      <td>{cell(props.series.find((s) => s.band)?.points.find((p) => p.date === date)?.lower, props, anchor)}</td>
+                      <td>{cell(props.series.find((s) => s.band)?.points.find((p) => p.date === date)?.upper, props, anchor)}</td>
+                    </>
+                  ) : null}
+                  <td>{obsText(props, date, anchor)}</td>
+                  <td>{cell(props.trend?.find((t) => t.date === date)?.kg, props, anchor)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </figure>
+  );
+}
+
+function shown(kg: number, props: Props, anchor: number) {
+  if (props.hideAbsolute) {
+    const delta = props.unit === "lb" ? (kg - anchor) * 2.2046226218 : kg - anchor;
+    return `${round1(delta).toFixed(1)} ${props.unit} from the first point`;
+  }
+  return formatKg(kg, props.unit, false);
+}
+
+function cell(kg: number | null | undefined, props: Props, anchor: number) {
+  if (kg == null || !Number.isFinite(kg)) return "—";
+  return shown(kg, props, anchor);
+}
+
+function obsText(props: Props, date: string, anchor: number) {
+  const rows = (props.observations ?? []).filter((obs) => obs.date === date);
+  if (!rows.length) return "—";
+  return rows.map((obs) => `${cell(obs.kg, props, anchor)} (${obs.source})`).join("; ");
+}
+
+function collectDates(props: Props) {
+  const set = new Set<string>();
+  props.series.forEach((series) => series.points.forEach((p) => set.add(p.date)));
+  props.observations?.forEach((o) => set.add(o.date));
+  props.trend?.forEach((t) => set.add(t.date));
+  return [...set].sort();
+}
+
+function bandPath(series: ChartSeries, xOf: (d: string) => number, yOf: (kg: number) => number) {
+  const points = series.points.filter((p) => p.lower != null && p.upper != null);
+  if (!points.length) return "";
+  const top = points.map((p, i) => `${i === 0 ? "M" : "L"} ${xOf(p.date).toFixed(1)} ${yOf(p.upper ?? p.kg).toFixed(1)}`);
+  const bottom = [...points].reverse().map((p) => `L ${xOf(p.date).toFixed(1)} ${yOf(p.lower ?? p.kg).toFixed(1)}`);
+  return `${top.join(" ")} ${bottom.join(" ")} Z`;
+}
+
+function linePath(points: Array<[number, number]>) {
+  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+}
+
+function niceTicks(min: number, max: number, count: number) {
+  const span = max - min || 1;
+  const step = span / count;
+  const ticks: number[] = [];
+  for (let i = 0; i <= count; i++) ticks.push(min + step * i);
+  return ticks.map((tick) => Math.round(tick * 10) / 10);
+}
+
+function describeFocus(props: Props, date: string | null, anchor: number) {
+  if (!date) return "No dates to inspect.";
+  const bits = [formatDate(date, props.dateStyle ?? "dmy")];
+  props.series.forEach((series) => {
+    const point = series.points.find((item) => item.date === date);
+    if (!point) return;
+    bits.push(`${series.label}: ${shown(point.kg, props, anchor)}`);
+    if (point.lower != null && point.upper != null) {
+      bits.push(`sensitivity range ${shown(point.lower, props, anchor)} to ${shown(point.upper, props, anchor)}`);
+    }
+    if (point.intake != null) bits.push(`planned intake ${formatKcal(point.intake)}`);
+    if (point.expenditure != null) bits.push(`Hall expenditure ${formatKcal(point.expenditure)}`);
+  });
+  const obs = (props.observations ?? []).filter((item) => item.date === date);
+  if (obs.length) bits.push(`observed ${obs.map((item) => `${shown(item.kg, props, anchor)}, ${item.source}`).join("; ")}`);
+  else bits.push("no weigh-in on this date");
+  const trend = props.trend?.find((item) => item.date === date);
+  if (trend) bits.push(`trend estimate ${shown(trend.kg, props, anchor)}`);
+  bits.push("Modelled points are end-of-day Hall projections, not scale predictions.");
+  return bits.join(". ");
+}
+
+function textSummary(props: Props, anchor: number) {
+  const primary = props.series[0];
+  if (!primary?.points.length) return "No forecast is drawn.";
+  const first = primary.points[0];
+  const last = primary.points[primary.points.length - 1];
+  const a = shown(first.kg, props, anchor);
+  const b = shown(last.kg, props, anchor);
+  const low = last.lower != null ? shown(last.lower, props, anchor) : null;
+  const high = last.upper != null ? shown(last.upper, props, anchor) : null;
+  const range = low && high ? ` On the last day the sensitivity range is ${low} to ${high}.` : "";
+  return `The first series runs from ${a} on ${formatDate(first.date, props.dateStyle ?? "dmy")} to ${b} on ${formatDate(last.date, props.dateStyle ?? "dmy")}.${range} This is not a predicted scale reading.`;
+}
