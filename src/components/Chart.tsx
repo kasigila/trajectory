@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { centralCrossing } from "../model/crossing";
 import { formatDate } from "../model/dates";
+import { trendNote, weeklyPoints } from "../model/trend-note";
 import { formatKg, formatKcal, round1 } from "../model/units";
 
 export interface SeriesPoint {
@@ -43,11 +44,19 @@ interface Props {
   prominent?: boolean;
 }
 
-const W = 800;
-const H = 420;
 const PAD = { l: 64, r: 16, t: 22, b: 40 };
 
 export function TrajectoryChart(props: Props) {
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 960px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 960px)");
+    const apply = () => setNarrow(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+  const W = narrow ? 480 : 800;
+  const H = narrow ? 680 : 420;
   const dates = useMemo(() => collectDates(props), [props]);
   const anchor = props.series[0]?.points[0]?.kg ?? props.observations?.[0]?.kg ?? 0;
   const plot = (kg: number) => {
@@ -56,6 +65,8 @@ export function TrajectoryChart(props: Props) {
   };
   const [focus, setFocus] = useState<string | null>(dates.at(-1) ?? null);
   const [showAll, setShowAll] = useState(false);
+  const [noteStatus, setNoteStatus] = useState<string | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     if (!focus || !dates.includes(focus)) setFocus(dates.at(-1) ?? null);
   }, [dates, focus]);
@@ -119,6 +130,46 @@ export function TrajectoryChart(props: Props) {
   const live = describeFocus(props, focus, anchor);
   const summary = textSummary(props, anchor);
 
+  async function copyTrend() {
+    const series = props.series[0];
+    const rows = weeklyPoints(series?.points ?? []).map((point) => ({
+      date: formatDate(point.date, props.dateStyle ?? "dmy"),
+      value: shown(point.kg, props, anchor),
+      range: rangePhrase(point.lower, point.upper, props, anchor),
+    }));
+    const text = trendNote({ title: series?.label ?? "Weight trend", rows });
+    try {
+      await navigator.clipboard.writeText(text);
+      setNoteStatus("Copied. Paste it into Notes or any other app.");
+    } catch {
+      setNoteStatus("Copy was blocked by the browser. The data table below can still be selected.");
+    }
+  }
+
+  async function savePicture() {
+    const svg = svgRef.current;
+    if (!svg) return;
+    try {
+      const blob = await pictureOf(svg, W, H);
+      const file = new File([blob], "trajectory-weight-trend.png", { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Weight trend", text: summary });
+        setNoteStatus("Share sheet opened. You can send the chart to Notes.");
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "trajectory-weight-trend.png";
+      link.click();
+      URL.revokeObjectURL(url);
+      setNoteStatus("Chart picture saved. Open it from your downloads.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setNoteStatus("The chart picture could not be saved. Copy for notes still works.");
+    }
+  }
+
   return (
     <figure className={props.prominent ? "chart-block chart-hero" : "chart-block"}>
       <figcaption>
@@ -149,6 +200,8 @@ export function TrajectoryChart(props: Props) {
           viewBox={`0 0 ${W} ${H}`}
           role="presentation"
           aria-hidden="true"
+          ref={svgRef}
+          onPointerDown={(event) => nearest(event.clientX, event.currentTarget)}
           onPointerMove={(event) => nearest(event.clientX, event.currentTarget)}
         >
           <text x={14} y={PAD.t} className="axis-name">{props.hideAbsolute ? `Change, ${props.unit}` : props.unit}</text>
@@ -210,6 +263,11 @@ export function TrajectoryChart(props: Props) {
         {live}
       </p>
       <p className="summary">{summary}</p>
+      <div className="chart-actions">
+        <button type="button" className="btn" onClick={() => void copyTrend()}>Copy for notes</button>
+        <button type="button" className="btn" onClick={() => void savePicture()}>Save or share chart</button>
+      </div>
+      {noteStatus ? <p className="fine" role="status">{noteStatus}</p> : null}
       {offScaleObservations.length ? (
         <p className="fine">{offScaleObservations.length} weigh-in{offScaleObservations.length === 1 ? "" : "s"} sit far from this forecast, so the axis stays on the projection. Those readings remain in the table.</p>
       ) : null}
@@ -301,6 +359,55 @@ function crossingSentence(props: Props, targetKg: number) {
   const hit = series ? centralCrossing(series.points.map((point) => ({ date: point.date, centralKg: point.kg })), targetKg) : null;
   if (!hit) return "The central series does not reach this chart marker inside the saved horizon. No scale date is promised.";
   return `The central series reaches this chart marker on ${formatDate(hit.date, props.dateStyle ?? "dmy")}. That is arithmetic on the central series, not a validated prediction of a scale reading.`;
+}
+
+async function pictureOf(svg: SVGSVGElement, width: number, height: number): Promise<Blob> {
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  copyPaint(svg, clone);
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.setAttribute("width", String(width * 2));
+  clone.setAttribute("height", String(height * 2));
+  const xml = new XMLSerializer().serializeToString(clone);
+  const url = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml;charset=utf-8" }));
+  try {
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("chart image"));
+      image.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = width * 2;
+    canvas.height = height * 2;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("canvas");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("png");
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function copyPaint(source: Element, clone: Element) {
+  const paint = getComputedStyle(source);
+  if (clone instanceof SVGElement) {
+    clone.setAttribute("fill", paint.fill);
+    clone.setAttribute("stroke", paint.stroke);
+    clone.setAttribute("stroke-width", paint.strokeWidth);
+    clone.setAttribute("font-size", paint.fontSize);
+    clone.setAttribute("font-family", paint.fontFamily);
+    if (paint.strokeDasharray && paint.strokeDasharray !== "none") clone.setAttribute("stroke-dasharray", paint.strokeDasharray);
+  }
+  const sourceChildren = [...source.children];
+  const cloneChildren = [...clone.children];
+  sourceChildren.forEach((child, index) => {
+    const next = cloneChildren[index];
+    if (next) copyPaint(child, next);
+  });
 }
 
 function shown(kg: number, props: Props, anchor: number) {

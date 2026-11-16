@@ -49,18 +49,29 @@ try {
   await send("Runtime.enable", {}, sessionId);
   await send("Page.enable", {}, sessionId);
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true }, sessionId);
+  await send("Browser.grantPermissions", {
+    origin: `http://127.0.0.1:${port}`,
+    permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+  });
   await send("Page.addScriptToEvaluateOnNewDocument", {
     source: `localStorage.setItem("trajectory.v1", ${JSON.stringify(JSON.stringify(seed()))});`,
   }, sessionId);
-  await send("Page.navigate", { url: `http://127.0.0.1:${port}/trajectory/#/simulator` }, sessionId);
+  await send("Page.navigate", { url: `http://127.0.0.1:${port}/trajectory/#/overview` }, sessionId);
   const measure = `(() => {
     const navEl = document.querySelector(".nav");
     const bottomEl = document.querySelector(".bottom-nav");
     const nav = navEl ? getComputedStyle(navEl) : null;
     const bottom = bottomEl ? getComputedStyle(bottomEl) : null;
+    const plot = document.querySelector(".chart-plot");
+    const plotBox = plot?.getBoundingClientRect();
+    const titleBox = document.querySelector("h1")?.getBoundingClientRect();
+    const copy = [...document.querySelectorAll("button")].find((button) => button.textContent === "Copy for notes");
     return {
       title: document.querySelector("h1")?.textContent ?? "",
       text: document.body.innerText.slice(0, 180),
+      plotHeight: plotBox?.height ?? 0,
+      chartBeforeTitle: Boolean(plotBox && titleBox && plotBox.top < titleBox.top),
+      hasCopy: Boolean(copy),
       navDisplay: nav?.display ?? "missing",
       bottomDisplay: bottom?.display ?? "missing",
       hasIcon: Boolean(document.querySelector(".bottom-nav .icon")),
@@ -82,12 +93,26 @@ try {
     ["bottom navigation is shown", value?.bottomDisplay === "flex"],
     ["navigation has an icon", value?.hasIcon === true],
     ["page does not scroll sideways", value && value.scrollWidth <= value.clientWidth + 1],
+    ["weight chart is on screen", value && value.plotHeight >= 400 && value.chartBeforeTitle],
+    ["notes copy is offered", value?.hasCopy === true],
   ];
   for (const [name, ok] of checks) {
     console.log(`${ok ? "ok" : "FAIL"} ${name}`);
     if (!ok) failed = true;
   }
   console.log(JSON.stringify(value));
+  await send("Runtime.evaluate", {
+    expression: `document.querySelectorAll("button").forEach((button) => { if (button.textContent === "Copy for notes") button.click(); })`,
+  }, sessionId);
+  await delay(300);
+  const copied = await send("Runtime.evaluate", {
+    expression: `document.querySelector("[role=status]")?.textContent ?? ""`,
+    returnByValue: true,
+  }, sessionId);
+  const note = copied.result?.result?.value ?? "";
+  const noteOk = note.startsWith("Copied.") || note.startsWith("Copy was blocked");
+  console.log(`${noteOk ? "ok" : "FAIL"} copy tells you what happened: ${note}`);
+  if (!noteOk) failed = true;
   browser.close();
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
@@ -140,8 +165,68 @@ function seed() {
         referenceActivity: { category: "sedentary", steps: 7000, pal: 1.5 }, excludedContext: "none", excludedDetail: "",
       }],
       activeProfileId: "prof_phone",
-      scenarios: [], observations: [], otherMeasurements: [], compositionLogs: [], cycleLogs: [], importBatches: [],
+      scenarios: [phoneScenario()], observations: [], otherMeasurements: [], compositionLogs: [], cycleLogs: [], importBatches: [],
       drafts: {}, audits: [], reminderDismissedOn: null, phasePromptDismissedOn: null, featureFlags: { advancedMath: false },
+    }],
+  };
+}
+
+function phoneScenario() {
+  const points = Array.from({ length: 15 }, (_, index) => {
+    const date = new Date(Date.UTC(2026, 10, 1 + index)).toISOString().slice(0, 10);
+    const centralKg = Math.round((70 - index * 0.12) * 10) / 10;
+    return {
+      date,
+      centralKg,
+      lowerKg: Math.round((centralKg - 0.4) * 10) / 10,
+      upperKg: Math.round((centralKg + 0.3) * 10) / 10,
+      boundType: "sensitivity-range",
+      expenditureKcal: 2200,
+      intakeKcal: 1800,
+      massBeforeKg: centralKg,
+    };
+  });
+  return {
+    id: "scn_phone",
+    profileId: "prof_phone",
+    name: "Phone plan",
+    description: "",
+    labels: [],
+    createdAt: "2026-11-01T00:00:00.000Z",
+    archivedAt: null,
+    activeVersionId: "ver_phone",
+    versions: [{
+      id: "ver_phone",
+      scenarioId: "scn_phone",
+      versionNumber: 1,
+      parentVersionId: null,
+      duplicatedFromVersionId: null,
+      createdAt: "2026-11-01T00:00:00.000Z",
+      modelId: "hall-2011",
+      modelVersion: "1",
+      engineBuild: "phone-check",
+      inputSnapshot: { goal: null, horizonDays: 15 },
+      inputHash: "phone-check-hash",
+      assumptions: [],
+      forecast: {
+        id: "run_phone",
+        scenarioVersionId: "ver_phone",
+        modelId: "hall-2011",
+        modelVersion: "1",
+        engineBuild: "phone-check",
+        status: "complete",
+        inputHash: "phone-check-hash",
+        startedAt: "2026-11-01T00:00:00.000Z",
+        completedAt: "2026-11-01T00:00:01.000Z",
+        warnings: [],
+        assumptions: [],
+        refusal: null,
+        points,
+        errorId: null,
+      },
+      idempotencyKey: "phone",
+      editKind: "initial",
+      change: { summary: "Phone check", fields: [] },
     }],
   };
 }
