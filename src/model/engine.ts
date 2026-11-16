@@ -218,7 +218,7 @@ function assumptionList(inputs: ScenarioInputs, closureKcal: number, composition
     "Expenditure is equation (5)/(9): K + γF F + γL L + δ·BW + TEF + AT + synthesis costs. γF = 13 and γL = 92 kJ/kg/day (Nelson et al., Am J Clin Nutr 1992). ηF = 750 and ηL = 960 kJ/kg (Hall, Br J Nutr 2010). βTEF = 0.1 (Blaxter 1989). βAT = 0.14 and τAT = 14 days (Hall & Jordan, Am J Clin Nutr 2008; webappendix).",
     "δ comes from equation (8): [(1 − βTEF)·PAL − 1] · RMR / reference weight. RMR is the Mifflin–St Jeor equation (Am J Clin Nutr 1990). The only PAL the webappendix states is sedentary PAL 1.5. A different PAL is used only when you enter one. Step counts and exercise minutes have no published coefficient here, so they are stored and not added.",
     "Glycogen equation (1) and extracellular-fluid equation (2) are not integrated, because carbohydrate intake and dietary sodium are not collected. With those fluxes at zero, that constant mass is absorbed into K and does not move the weight trajectory.",
-    "The shaded band is the envelope of the same equations under published input sensitivity: initial fat ± the Jackson et al. 2002 standard error of estimate when equation (4) supplied the fat mass (4.6 percentage points for men, 4.4 for women), and the other baseline-expenditure closure (the number you entered, or PAL × Mifflin–St Jeor RMR). It is a sensitivity range, not a confidence interval and not a prediction interval.",
+    "The shaded band is the envelope of the same equations under published input sensitivity: initial fat moved by the Jackson et al. 2002 standard error of estimate (4.6 percentage points for men, 4.4 for women), and the other baseline-expenditure closure (the number you entered, or PAL × Mifflin–St Jeor RMR). When you type a body-fat percent, the central path uses that number and the band still moves it by the same standard error. That is not the error of a scale or a scanner. It is a sensitivity range, not a confidence interval and not a prediction interval.",
     "Weigh-ins are not inputs to this run. Saving a weigh-in does not change the plan or this forecast.",
     "Notes on a day are context only. They do not change the arithmetic.",
     inputs.horizonDays > LIMITS.horizonWarnAfter
@@ -227,7 +227,7 @@ function assumptionList(inputs: ScenarioInputs, closureKcal: number, composition
   ];
   if (sex) lines.push(`Sex-related model input: ${sexEquationLabel(sex)}. This is the equation set, not a statement of identity.`);
   if (inputs.profile.bodyFatPct != null && inputs.profile.leanMassKg != null) {
-    lines.push("Both a body-fat percent and a lean mass were stored. Initial fat uses the body-fat percent so the two are not mixed. The Jackson error is not applied to an entered fat mass.");
+    lines.push("Both a body-fat percent and a lean mass were stored. Initial fat uses the body-fat percent so the two are not mixed. The sensitivity band still moves that fat mass by the Jackson standard error. That is not the error of a scale or a scanner.");
   }
   if (inputs.profile.referenceDate !== inputs.startDate) {
     lines.push("The reference weight date and the scenario start date differ. The integration still begins the first scenario day at the reference weight. It does not fill the gap.");
@@ -275,8 +275,9 @@ export function runForecast(inputs: ScenarioInputs): ForecastResult {
     } else arms.push(run);
   }
   if (composition.seePct != null) {
+    const origin = composition.source === "jackson" ? "the Jackson et al. 2002 regression" : "the body-fat percent stored on the profile";
     warnings.push(
-      `The range includes initial fat at the Jackson et al. 2002 regression ± ${composition.seePct} percentage points (the standard error of estimate for that equation). That is input sensitivity, not a confidence interval for a future scale weight.`,
+      `The range includes initial fat from ${origin}, moved by ± ${composition.seePct} percentage points (the Jackson et al. 2002 standard error of estimate). That is input sensitivity, not a confidence interval for a future scale weight.`,
     );
   }
   const alternate = alternateEnergyClosureKcal(inputs.profile, closure);

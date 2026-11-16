@@ -110,12 +110,12 @@ export function explainChange(before: ScenarioInputs | null, beforePoints: Forec
     ? " Profile inputs in the snapshot differ. A profile change can move the path from the first day, because the Hall model starts from those baseline conditions."
     : "";
   const narrative = [
-    inputBits.length ? `What changed in the plan: ${inputBits.join(" ")}` + more : "No day-level intake or activity difference was found. If the path still moved, a baseline condition such as maintenance, reference weight, or horizon changed.",
+    inputBits.length ? `What changed in the plan:\n${inputBits.join("\n")}${more ? `\n${more.trim()}` : ""}` : "No day-level intake or activity difference was found. If the path still moved, a baseline condition such as maintenance, reference weight, or horizon changed.",
     prefix,
     direction,
     "The shaded band is a sensitivity range from the Jackson standard error and the alternate baseline-expenditure closure, not a confidence interval.",
     "The previous version is still saved and was not overwritten.",
-  ].join(" ");
+  ].join("\n");
   return { narrative: narrative + profileNote, firstDivergence, prefixUnchanged, endDeltaKg, spans };
 }
 

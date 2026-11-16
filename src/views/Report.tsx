@@ -21,7 +21,11 @@ export function Report() {
       <p>Profile {profile.label}. Generated {stamp(new Date().toISOString())} for local dates in {account.preferences.timeZone}.</p>
       {version && scenario ? (
         <>
-          <p>Version {version.versionNumber}. {MODEL.name} ({MODEL.shortCitation}). Not a clinically validated medical device. Model {MODEL.id} {MODEL.version}. Engine {MODEL.engineBuild}. Run {version.forecast.id}. Hash {version.inputHash}. Saved {stamp(version.forecast.completedAt)}.</p>
+          <p>
+            Version {version.versionNumber}. {MODEL.name} ({MODEL.shortCitation}). Not a clinically validated medical device.
+            Saved {stamp(version.forecast.completedAt)}. Short hash {version.inputHash.slice(0, 12)}.
+            <button type="button" className="btn quiet no-print" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy full hash</button>
+          </p>
           <p>Horizon {when(version.inputSnapshot.startDate, account.preferences)} through {when(addDays(version.inputSnapshot.startDate, version.inputSnapshot.horizonDays - 1), account.preferences)}, both dates included. Maintenance basis {energy(maintenanceBasis(version.inputSnapshot.profile) ?? NaN)}.</p>
           <TrajectoryChart
             caption="Report chart"
@@ -35,7 +39,7 @@ export function Report() {
             observations={account.observations.filter((obs) => obs.profileId === profile.id && !obs.deletedAt).map((obs) => ({ id: obs.id, date: obs.localDate, kg: obs.valueKg, source: obs.source }))}
           />
           <h2>Why this version differs from its parent</h2>
-          <p>{version.change.narrative}</p>
+          <p className="change-copy">{version.change.narrative}</p>
           <h2>Assumptions</h2>
           <ul>{(account.featureFlags.advancedMath ? version.assumptions : version.assumptions.slice(0, 6)).map((line) => <li key={line}>{line}</li>)}</ul>
           <p>Reference weight {weight(version.inputSnapshot.profile.referenceWeightKg, account.preferences)} on {when(version.inputSnapshot.profile.referenceDate, account.preferences)}. Height {version.inputSnapshot.profile.heightCm} cm is used in the Jackson equation and in Mifflin–St Jeor.</p>

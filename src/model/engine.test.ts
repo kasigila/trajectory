@@ -89,6 +89,8 @@ describe("forecast contract", () => {
       expect(point.upperKg).toBeGreaterThanOrEqual(point.centralKg);
       expect(point.boundType).toBe("sensitivity-range");
     }
+    const last = a.points.at(-1)!;
+    expect(last.upperKg - last.lowerKg).toBeGreaterThan(0.05);
   });
 
   it("does not rewrite days before an edit", () => {

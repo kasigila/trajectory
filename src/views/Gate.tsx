@@ -16,9 +16,9 @@ export function Gate() {
         <Logo />
         <p className="tagline">{TAGLINE}</p>
         <h1>A studio for dated body-weight scenarios.</h1>
-        <p className="lede">Plan intake and activity across time, edit a day, and see the Hall trajectory with a sensitivity range. It is not a diet tracker and not a medical device.</p>
+        <p className="lede">This is a private weight-forecasting tool for adults. After this age check you set up your own profile. It is not a sample person, not a diet tracker, and not a medical device.</p>
         {db.deletionReceipt ? <Notice>Local data for “{db.deletionReceipt.label}” was removed on {db.deletionReceipt.at}. This build has no server backup.</Notice> : null}
-        <Field label="Your date of birth" hint="Used only to enforce the 18+ limit. Your profile can use a different date. Health-data permission is not part of this step.">
+        <Field label="Your date of birth" hint="Used only to enforce the 18+ limit. Use the calendar. Your profile can use a different date. Health-data permission is not part of this step.">
           <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
         </Field>
         <Disclosure title="Terms">{TERMS}</Disclosure>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { PageTitle } from "../components/Shell";
 import { Button, Field, Notice } from "../components/ui";
 import { PRIVACY } from "../copy";
+import { stamp } from "../format";
 import { MODEL } from "../model/parameters";
 import { go } from "../route";
 import {
@@ -109,14 +110,14 @@ export function Settings() {
         <ul>
           <li>Profiles: {account.profiles.length}</li>
           <li>Scenarios: {account.scenarios.length}</li>
-          <li>Weigh-ins: {account.observations.length}</li>
+          <li>Weigh-ins on the chart: {account.observations.filter((item) => !item.deletedAt).length}. Removed and still stored: {account.observations.filter((item) => item.deletedAt).length}.</li>
           <li>Cycle notes: {account.cycleLogs.length}</li>
           <li>Analytics vendor: none in this build</li>
         </ul>
         <h3>Consent records</h3>
         <ul>
           {[...db.viewer.consents, ...account.consents].map((item) => (
-            <li key={item.id}>{item.consentType} · policy {item.policyVersion} · {item.grantedAt ? `granted ${item.grantedAt}` : "not granted"}{item.revokedAt ? ` · revoked ${item.revokedAt}` : ""}</li>
+            <li key={item.id}>{consentName(item.consentType)} · policy {item.policyVersion} · {item.grantedAt ? `granted ${stamp(item.grantedAt)}` : "not granted"}{item.revokedAt ? ` · revoked ${stamp(item.revokedAt)}` : ""}</li>
           ))}
         </ul>
         <Button onClick={() => withdrawUse()}>Withdraw terms and close the studio</Button>
@@ -157,12 +158,14 @@ function ProfileForm() {
   const [maintenance, setMaintenance] = useState(profile?.maintenanceKcal?.toString() ?? "");
   const [birth, setBirth] = useState(profile?.birthDate ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
   if (!account || !profile) return null;
   return (
     <article className="card">
       <h2>Profile inputs</h2>
       <p>Saving here does not rewrite scenarios. Each scenario keeps its snapshot until you re-run it from the simulator.</p>
       {error ? <Notice tone="warn">{error}</Notice> : null}
+      {saved ? <p role="status">{saved}</p> : null}
       <div className="grid-2">
         <Field label="Date of birth"><input type="date" value={birth} onChange={(event) => setBirth(event.target.value)} /></Field>
         <Field label="Height, cm"><input value={height} onChange={(event) => setHeight(event.target.value)} /></Field>
@@ -195,6 +198,7 @@ function ProfileForm() {
           energyBasis: profile.energyBasis === "model-estimated" ? "model-estimated" : profile.energyBasis,
         });
         setError(result.ok ? null : result.message);
+        setSaved(result.ok ? "Profile inputs saved. Existing scenarios were not rewritten." : null);
       }}>Save profile inputs</Button>
       <p className="fine">Affected scenarios: {account.scenarios.filter((item) => item.profileId === profile.id).map((item) => item.name).join(", ") || "none"}.</p>
     </article>
@@ -273,6 +277,15 @@ function exportCsv(account: NonNullable<ReturnType<typeof sessionAccount>>) {
 
 function csvCell(value: string) {
   return `"${value.replaceAll('"', '""')}"`;
+}
+
+function consentName(type: string) {
+  if (type === "cycle-context") return "Cycle notes";
+  if (type === "health-sync") return "Health sync";
+  if (type === "terms") return "Terms";
+  if (type === "privacy") return "Privacy";
+  if (type === "reminders") return "Reminders";
+  return type;
 }
 
 function downloadText(filename: string, text: string) {

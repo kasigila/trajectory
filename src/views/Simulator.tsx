@@ -169,16 +169,17 @@ export function Simulator() {
         cycleDates={account.consents.some((item) => item.consentType === "cycle-context" && item.grantedAt && !item.revokedAt) ? account.cycleLogs.filter((log) => log.profileId === profile.id).map((log) => log.date) : []}
         observations={showWeighIns ? observations.map((obs) => ({ id: obs.id, date: obs.localDate, kg: obs.valueKg, source: obs.source })) : []}
         series={[
-          { id: version.id, label: `Version ${version.versionNumber} central`, points: toChartPoints(version.forecast.points), band: !preview },
+          { id: version.id, label: `Version ${version.versionNumber}`, points: toChartPoints(version.forecast.points), band: !preview },
           ...(preview?.status === "complete" ? [{ id: "preview", label: "Unsaved preview", dash: "5 5", points: toChartPoints(preview.points), band: true }] : []),
           ...(showOriginal && original.id !== version.id ? [{ id: original.id, label: "Original version", dash: "2 4", points: toChartPoints(original.forecast.points), band: false }] : []),
         ]}
       />
       <article className="explain">
         <h2>Why the projection looks like this</h2>
-        <p>{previewExplain?.narrative ?? version.change.narrative}</p>
+        <p className="change-copy">{previewExplain?.narrative ?? version.change.narrative}</p>
         <p className="fine">
-          Model {MODEL.id} {MODEL.version}. Generated {stamp(version.forecast.completedAt)}. Input hash {version.inputHash.slice(0, 12)}. Run {version.forecast.id.slice(0, 8)}. Band type: sensitivity range.
+          {MODEL.name}. Generated {stamp(version.forecast.completedAt)}. Short hash {version.inputHash.slice(0, 12)}.
+          <button type="button" className="btn quiet" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy full hash</button>
         </p>
         {version.forecast.warnings.map((warning) => (
           <p key={warning} className="fine">{warning}</p>
@@ -364,7 +365,7 @@ function DayEditor({
       <p>{rangeLabel}. Shift-click or shift-arrow extends a range. Both ends are included.</p>
       {day ? (
         <>
-          <p className="fine">Intake comes from {sourceLabel(day.sources.intakeKcal, day)}. PAL comes from {sourceLabel(day.sources.pal, day)}. Activity mode comes from {sourceLabel(day.sources.activityMode, day)}.</p>
+          <p className="fine">{`Intake comes from the ${sourceLabel(day.sources.intakeKcal, day).toLowerCase()}. PAL comes from the ${sourceLabel(day.sources.pal, day).toLowerCase()}. Activity mode comes from the ${sourceLabel(day.sources.activityMode, day).toLowerCase()}.`}</p>
           <p className="fine">
             Hall activity term at the reference weight: {energy(activityAdjustmentKcal(day, inputs.profile).kcal)}. Step counts are stored and are not converted. Explicit activity energy replaces the PAL term so they are not added twice.
           </p>
@@ -470,59 +471,69 @@ function PhaseEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: (
 
 function WeekEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: (inputs: ScenarioInputs) => void }) {
   const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const [cells, setCells] = useState(() => weekCells(inputs));
+  const [status, setStatus] = useState<string | null>(null);
+  const signature = JSON.stringify(inputs.weekly.days);
+  useEffect(() => setCells(weekCells(inputs)), [signature]);
   return (
     <Disclosure title="Weekday template">
-      <p className="fine">A template fills days that are not covered by a phase or a single-day override. The second box is PAL, the activity input in the Hall model. Blank leaves that field alone. Steps are not an energy input.</p>
+      <p className="fine">A template fills days that are not covered by a phase or a single-day override. The second box is PAL, the activity input in the Hall model. Blank leaves that field alone. Steps are not an energy input. Nothing is written until you apply it.</p>
       <label className="check">
         <input type="checkbox" checked={inputs.weekly.enabled} onChange={(event) => onInputs({ ...inputs, weekly: { ...inputs.weekly, enabled: event.target.checked } })} />
         Use weekday template
       </label>
-      {labels.map((label, index) => {
-        const key = index as 0 | 1 | 2 | 3 | 4 | 5 | 6;
-        const day = inputs.weekly.days[key];
-        return (
-          <div key={label} className="week-row">
-            <span>{label}</span>
-            <input
-              key={`${label}-intake-${day?.intakeKcal ?? "empty"}`}
-              aria-label={`${label} intake`}
-              placeholder="Intake"
-              defaultValue={day?.intakeKcal ?? ""}
-              onBlur={(event) => {
-                const intakeKcal = event.target.value === "" ? undefined : Number(event.target.value);
-                const days = { ...inputs.weekly.days };
-                days[key] = { ...days[key], intakeKcal };
-                onInputs({ ...inputs, weekly: { ...inputs.weekly, days } });
-              }}
-            />
-            <input
-              key={`${label}-pal-${day?.pal ?? "empty"}`}
-              aria-label={`${label} PAL`}
-              placeholder="PAL"
-              defaultValue={day?.pal ?? ""}
-              onBlur={(event) => {
-                const pal = event.target.value === "" ? undefined : Number(event.target.value);
-                const days = { ...inputs.weekly.days };
-                days[key] = { ...days[key], pal };
-                onInputs({ ...inputs, weekly: { ...inputs.weekly, days } });
-              }}
-            />
-          </div>
-        );
-      })}
+      <div className="week-row week-head" aria-hidden="true"><span>Day</span><span>Intake, kcal</span><span>PAL</span></div>
+      {labels.map((label, index) => (
+        <div key={label} className="week-row">
+          <span>{label}</span>
+          <input aria-label={`${label} intake, kcal`} inputMode="decimal" placeholder="Intake" value={cells[index].intake} onChange={(event) => setCells(cells.map((cell, i) => i === index ? { ...cell, intake: event.target.value } : cell))} />
+          <input aria-label={`${label} PAL`} inputMode="decimal" placeholder="PAL" value={cells[index].pal} onChange={(event) => setCells(cells.map((cell, i) => i === index ? { ...cell, pal: event.target.value } : cell))} />
+        </div>
+      ))}
+      {status ? <p role="status">{status}</p> : null}
+      <Button onClick={() => {
+        const days = { ...inputs.weekly.days };
+        for (let index = 0; index < cells.length; index++) {
+          const intakeText = cells[index].intake.trim();
+          const palText = cells[index].pal.trim();
+          const intakeKcal = intakeText === "" ? undefined : Number(intakeText);
+          const pal = palText === "" ? undefined : Number(palText);
+          if (intakeKcal != null && (!Number.isFinite(intakeKcal) || intakeKcal < LIMITS.intakeKcal[0] || intakeKcal > LIMITS.intakeKcal[1])) {
+            setStatus(`${labels[index]} intake must be between ${LIMITS.intakeKcal[0]} and ${LIMITS.intakeKcal[1]} kcal, or blank. Nothing was applied.`);
+            return;
+          }
+          if (pal != null && (!Number.isFinite(pal) || pal < LIMITS.pal[0] || pal > LIMITS.pal[1])) {
+            setStatus(`${labels[index]} PAL must be between ${LIMITS.pal[0]} and ${LIMITS.pal[1]}, or blank. Nothing was applied.`);
+            return;
+          }
+          const key = index as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+          days[key] = { ...days[key], intakeKcal, pal };
+        }
+        onInputs({ ...inputs, weekly: { ...inputs.weekly, days } });
+        setStatus("Weekday template applied to the draft. Save a version when you want to keep it.");
+      }}>Apply weekday template</Button>
     </Disclosure>
   );
+}
+
+function weekCells(inputs: ScenarioInputs) {
+  return [0, 1, 2, 3, 4, 5, 6].map((index) => {
+    const day = inputs.weekly.days[index as 0 | 1 | 2 | 3 | 4 | 5 | 6];
+    return { intake: day?.intakeKcal == null ? "" : String(day.intakeKcal), pal: day?.pal == null ? "" : String(day.pal) };
+  });
 }
 
 function CopyEditor({ inputs, selection, onInputs }: { inputs: ScenarioInputs; selection: { start: string; end: string } | null; onInputs: (inputs: ScenarioInputs) => void }) {
   const [target, setTarget] = useState(inputs.startDate);
   const [confirm, setConfirm] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   return (
     <Disclosure title="Copy">
       <Field label="Copy onto this start date">
         <input type="date" value={target} onChange={(event) => setTarget(event.target.value)} />
       </Field>
-      {confirm ? <Notice tone="warn">The destination already has overrides. Copying replaces those dates.</Notice> : null}
+      {status ? <p role="status">{status}</p> : null}
+      {confirm ? <Notice tone="warn">The destination already has edits or a phase. Copy again to replace those dates.</Notice> : null}
       <div className="toolbar">
         <Button onClick={() => copy(1)}>Copy selected day</Button>
         <Button onClick={() => copy(7)}>Copy seven days</Button>
@@ -531,7 +542,10 @@ function CopyEditor({ inputs, selection, onInputs }: { inputs: ScenarioInputs; s
   );
 
   function copy(count: number) {
-    if (!selection) return;
+    if (!selection) {
+      setStatus("Select a day on the calendar first. Nothing was copied.");
+      return;
+    }
     const sourceStart = selection.start;
     const next = structuredClone(inputs);
     let replaced = false;
@@ -539,7 +553,8 @@ function CopyEditor({ inputs, selection, onInputs }: { inputs: ScenarioInputs; s
       const from = addDays(sourceStart, i);
       const to = addDays(target, i);
       const source = resolveDay(inputs, from);
-      if (next.overrides.some((item) => item.date === to)) replaced = true;
+      const destination = resolveDay(inputs, to);
+      if (next.overrides.some((item) => item.date === to) || destination.sources.intakeKcal === "phase") replaced = true;
       next.overrides = next.overrides.filter((item) => item.date !== to);
       next.overrides.push({
         date: to,
@@ -562,6 +577,7 @@ function CopyEditor({ inputs, selection, onInputs }: { inputs: ScenarioInputs; s
     next.overrides.sort((a, b) => a.date.localeCompare(b.date));
     onInputs(next);
     setConfirm(false);
+    setStatus(`Copied ${count} day${count === 1 ? "" : "s"} onto the draft. Save a version when you want to keep it.`);
   }
 }
 
@@ -569,19 +585,26 @@ function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: 
   const [label, setLabel] = useState("Marker");
   const [date, setDate] = useState(inputs.startDate);
   const [goal, setGoal] = useState(inputs.goal?.weightKg?.toString() ?? "");
+  const [status, setStatus] = useState<string | null>(null);
   return (
-    <Disclosure title="Reference marker and notes">
-      <p className="fine">A reference weight is your annotation. The app will not build a plan to reach it, and it will not estimate a crossing date.</p>
-      <Field label="Reference weight, kg">
-        <input value={goal} onChange={(event) => setGoal(event.target.value)} />
+    <Disclosure title="Chart marker and notes">
+      <p className="fine">A chart marker is an annotation on the drawing. It is not the reference weight the Hall model starts from, and the app will not build a plan to reach it.</p>
+      <Field label="Chart marker, kg">
+        <input value={goal} onChange={(event) => { setGoal(event.target.value); setStatus(null); }} />
       </Field>
+      {status ? <p role="status">{status}</p> : null}
       <Button
         onClick={() => {
           const weightKg = goal.trim() === "" ? null : Number(goal);
-          onInputs({ ...inputs, goal: weightKg == null || !Number.isFinite(weightKg) ? null : { weightKg, date: null, label: "Personal reference" } });
+          if (weightKg != null && (!Number.isFinite(weightKg) || weightKg < LIMITS.weightKg[0] || weightKg > LIMITS.weightKg[1])) {
+            setStatus(`A chart marker must be between ${LIMITS.weightKg[0]} and ${LIMITS.weightKg[1]} kg, or blank to remove it. Nothing was saved.`);
+            return;
+          }
+          onInputs({ ...inputs, goal: weightKg == null ? null : { weightKg, date: null, label: "Chart marker" } });
+          setStatus(weightKg == null ? "Chart marker removed from the draft." : "Chart marker saved on the draft. It does not change the reference weight.");
         }}
       >
-        Save reference on draft
+        Save chart marker on draft
       </Button>
       <ul className="plain">
         {inputs.milestones.map((mark) => (
@@ -598,12 +621,22 @@ function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: 
 
 function Horizon({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: (inputs: ScenarioInputs) => void }) {
   const [days, setDays] = useState(String(inputs.horizonDays));
+  const [error, setError] = useState<string | null>(null);
   return (
     <div>
-      <Field label="Horizon, local days" hint={`Software cap ${LIMITS.horizonMin}–${LIMITS.horizonMax}. No validated horizon exists. Past ${LIMITS.horizonWarnAfter} days, the view is an unvalidated extrapolation.`}>
-        <input value={days} onChange={(event) => setDays(event.target.value)} />
+      <Field label="Horizon, local days" hint={`Whole days from ${LIMITS.horizonMin} to ${LIMITS.horizonMax}. Past ${LIMITS.horizonWarnAfter} days, the view is an unvalidated extrapolation.`}>
+        <input value={days} onChange={(event) => { setDays(event.target.value); setError(null); }} />
       </Field>
-      <Button onClick={() => onInputs({ ...inputs, horizonDays: Number(days) })}>Apply horizon to draft</Button>
+      {error ? <p role="alert">{error}</p> : null}
+      <Button onClick={() => {
+        const count = Number(days);
+        if (!Number.isInteger(count) || count < LIMITS.horizonMin || count > LIMITS.horizonMax) {
+          setError(`Enter a whole number from ${LIMITS.horizonMin} to ${LIMITS.horizonMax} days. The horizon was not changed.`);
+          return;
+        }
+        setError(null);
+        onInputs({ ...inputs, horizonDays: count });
+      }}>Apply horizon to draft</Button>
     </div>
   );
 }

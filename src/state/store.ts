@@ -396,8 +396,15 @@ function profileFromDraft(draft: OnboardingDraft): { ok: true; profile: Profile;
   if (!Number.isFinite(intake)) return fail("Enter a baseline intake. It was not filled in for you.");
   const bodyFat = draft.bodyFatPct.trim() === "" ? null : Number(draft.bodyFatPct);
   const lean = draft.leanMassKg.trim() === "" ? null : Number(draft.leanMassKg);
-  if (bodyFat != null && !Number.isFinite(bodyFat)) return fail("Body fat needs a number, or leave it blank.");
-  if (lean != null && !Number.isFinite(lean)) return fail("Lean mass needs a number, or leave it blank.");
+  if (bodyFat != null && (!Number.isFinite(bodyFat) || bodyFat < LIMITS.bodyFatPct[0] || bodyFat > LIMITS.bodyFatPct[1])) {
+    return fail(`Body fat must be between ${LIMITS.bodyFatPct[0]} and ${LIMITS.bodyFatPct[1]} percent, or leave it blank. The value was not changed.`);
+  }
+  if (lean != null && (!Number.isFinite(lean) || lean < LIMITS.leanMassKg[0] || lean > LIMITS.leanMassKg[1] || lean >= weight)) {
+    return fail(`Lean mass must be between ${LIMITS.leanMassKg[0]} and ${LIMITS.leanMassKg[1]} kg and below the reference weight, or leave it blank. The value was not changed.`);
+  }
+  if (!Number.isInteger(horizon) || horizon < LIMITS.horizonMin || horizon > LIMITS.horizonMax) {
+    return fail(`Horizon must be a whole number from ${LIMITS.horizonMin} to ${LIMITS.horizonMax} days. It was not changed.`);
+  }
   const weekendIntake = draft.weekendIntakeKcal.trim() === "" ? intake : Number(draft.weekendIntakeKcal);
   const weekendSteps = Number(draft.weekendSteps);
   if (draft.template === "weekday-weekend" && (!Number.isFinite(weekendIntake) || !Number.isFinite(weekendSteps))) {
@@ -849,6 +856,17 @@ export function deleteObservation(accountId: string, observationId: string) {
   }));
 }
 
+export function restoreObservation(accountId: string, observationId: string): ActionResult {
+  const current = accountById(accountId)?.observations.find((obs) => obs.id === observationId);
+  if (!current?.deletedAt) return fail("That reading is not in the removed list.");
+  mapAccount(accountId, (account) => ({
+    ...account,
+    observations: account.observations.map((obs) => (obs.id === observationId ? { ...obs, deletedAt: null } : obs)),
+    audits: [...account.audits, { id: uid("aud"), at: nowIso(), action: "observation.restore", subject: observationId }].slice(-200),
+  }));
+  return { ok: true };
+}
+
 export async function commitImport(accountId: string, args: {
   profileId: string;
   timeZone: string;
@@ -930,9 +948,15 @@ export async function commitImport(accountId: string, args: {
   return { ok: true, id: batchId, warning: `Imported ${additions.length}. Skipped ${skipped} likely duplicate${skipped === 1 ? "" : "s"}. ${errors.length ? errors.length + " row(s) had errors and were not saved." : "Manual readings were not overwritten."}` };
 }
 
-export function addOtherMeasurement(accountId: string, row: Omit<OtherMeasurement, "id" | "createdAt">) {
+export function addOtherMeasurement(accountId: string, row: Omit<OtherMeasurement, "id" | "createdAt">): ActionResult {
+  const waist = row.valueCm;
+  if (row.kind === "waist" && (waist == null || !Number.isFinite(waist) || waist < LIMITS.waistCm[0] || waist > LIMITS.waistCm[1])) {
+    return fail(`Waist must be between ${LIMITS.waistCm[0]} and ${LIMITS.waistCm[1]} cm to be stored. The value was not changed. This is a software bound, not a clinical measure.`);
+  }
+  if (!isIsoDate(row.date)) return fail("Enter a valid date. Nothing was saved.");
   const measurement: OtherMeasurement = { ...row, id: uid("mea"), createdAt: nowIso() };
   mapAccount(accountId, (account) => ({ ...account, otherMeasurements: [...account.otherMeasurements, measurement] }));
+  return { ok: true };
 }
 
 export function addComposition(accountId: string, row: Omit<CompositionLog, "id" | "createdAt">): ActionResult {

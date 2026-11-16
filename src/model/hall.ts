@@ -106,11 +106,11 @@ export function initialComposition(profile: ProfileInput, onDate: string): Compo
   if (profile.bodyFatPct != null) {
     fatPercent = profile.bodyFatPct;
     source = "entered-fat-percent";
-    seePct = null;
+    seePct = jacksonSeePct(sex);
   } else if (profile.leanMassKg != null) {
     fatPercent = ((weight - profile.leanMassKg) / weight) * 100;
     source = "entered-lean-mass";
-    seePct = null;
+    seePct = jacksonSeePct(sex);
   } else {
     fatPercent = jacksonFatPercent(sex, ageYears, weight, profile.heightCm);
     source = "jackson";

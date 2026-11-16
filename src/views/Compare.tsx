@@ -2,7 +2,7 @@ import { useState } from "react";
 import { TrajectoryChart } from "../components/Chart";
 import { PageTitle } from "../components/Shell";
 import { Button, Notice } from "../components/ui";
-import { energy, weight, when } from "../format";
+import { energy, stamp, weight, when } from "../format";
 import { maintenanceBasis } from "../model/engine";
 import { round1 } from "../model/units";
 import { duplicateScenario, useSession } from "../state/store";
@@ -19,7 +19,7 @@ export function Compare() {
   const versions = chosen.map((scenario) => scenario.versions.find((item) => item.id === scenario.activeVersionId)).filter((item): item is ScenarioVersion => Boolean(item));
   const dashes = [undefined, "7 5", "2 3"];
   const warnings = alignmentWarnings(versions);
-  const focus = date || versions[0]?.forecast.points[Math.floor((versions[0]?.forecast.points.length ?? 1) / 2)]?.date || "";
+  const focus = date || versions[0]?.forecast.points[0]?.date || "";
   return (
     <section>
       <PageTitle kicker="Compare" title="Plans side by side" lede="Differences are between Hall model runs. They are not guaranteed outcomes." />
@@ -46,6 +46,7 @@ export function Compare() {
           </label>
         ))}
       </div>
+      {versions.length < 2 ? <Notice>One scenario is not a comparison. Use Duplicate to make a second plan, then choose it in Scenario 2.</Notice> : null}
       {warnings.map((warning) => <Notice key={warning}>{warning}</Notice>)}
       {versions.length >= 2 ? (
         <TrajectoryChart
@@ -66,7 +67,7 @@ export function Compare() {
       )}
       <p className="fine">Sensitivity ranges are in the table below so several shaded bands do not hide one another. Line style differs as well as colour.</p>
       <FieldDate date={focus} onChange={setDate} />
-      {focus && versions.length >= 2 ? <Delta versions={versions} names={chosen.map((item) => item.name)} date={focus} unit={account.preferences.unit} hide={account.preferences.hideWeight} /> : null}
+      {focus && versions.length >= 2 ? <Delta versions={versions} names={chosen.map((item) => item.name)} date={when(focus, account.preferences)} unit={account.preferences.unit} hide={account.preferences.hideWeight} /> : null}
       <div className="table-wrap">
         <table>
           <caption>Assumptions for the compared versions</caption>
@@ -79,11 +80,11 @@ export function Compare() {
           <tbody>
             <tr><th>Version</th>{versions.map((version) => <td key={version.id}>{version.versionNumber}</td>)}</tr>
             <tr><th>Model</th>{versions.map((version) => <td key={version.id}>{version.modelId} {version.modelVersion}</td>)}</tr>
-            <tr><th>Generated</th>{versions.map((version) => <td key={version.id}>{version.forecast.completedAt}</td>)}</tr>
+            <tr><th>Generated</th>{versions.map((version) => <td key={version.id}>{stamp(version.forecast.completedAt)}</td>)}</tr>
             <tr><th>Start</th>{versions.map((version) => <td key={version.id}>{when(version.inputSnapshot.startDate, account.preferences)}</td>)}</tr>
             <tr><th>Horizon</th>{versions.map((version) => <td key={version.id}>{version.inputSnapshot.horizonDays} inclusive days</td>)}</tr>
             <tr><th>Time zone</th>{versions.map((version) => <td key={version.id}>{version.inputSnapshot.timeZone}</td>)}</tr>
-            <tr><th>Maintenance basis</th>{versions.map((version) => <td key={version.id}>{energy(maintenanceBasis(version.inputSnapshot.profile) ?? NaN)} ({version.inputSnapshot.profile.energyBasis})</td>)}</tr>
+            <tr><th>Maintenance basis</th>{versions.map((version) => <td key={version.id}>{energy(maintenanceBasis(version.inputSnapshot.profile) ?? NaN)} ({basisName(version.inputSnapshot.profile.energyBasis)})</td>)}</tr>
             <tr><th>Reference weight</th>{versions.map((version) => <td key={version.id}>{weight(version.inputSnapshot.profile.referenceWeightKg, account.preferences)}</td>)}</tr>
             <tr><th>Labels</th>{chosen.map((scenario) => <td key={scenario.id}>{scenario.labels.join(", ") || "—"}</td>)}</tr>
             {focus ? (
@@ -91,7 +92,11 @@ export function Compare() {
                 <th>Central on {focus}</th>
                 {versions.map((version) => {
                   const point = version.forecast.points.find((item) => item.date === focus);
-                  return <td key={version.id}>{point ? `${weight(point.centralKg, account.preferences)} (${weight(point.lowerKg, account.preferences)}–${weight(point.upperKg, account.preferences)})` : "Outside this run"}</td>;
+                  if (!point) return <td key={version.id}>Outside this run</td>;
+                  const central = weight(point.centralKg, account.preferences);
+                  const low = weight(point.lowerKg, account.preferences);
+                  const high = weight(point.upperKg, account.preferences);
+                  return <td key={version.id}>{low === high ? central : `${central} (${low}–${high})`}</td>;
                 })}
               </tr>
             ) : null}
@@ -114,6 +119,7 @@ function FieldDate({ date, onChange }: { date: string; onChange: (value: string)
   return (
     <label className="field">
       <span>Inspect a date</span>
+      <small>Compares the central estimates on this calendar day. It does not change either plan. Year-month-day.</small>
       <input type="date" value={date} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
@@ -126,6 +132,13 @@ function Delta({ versions, names, date, unit, hide }: { versions: ScenarioVersio
   const delta = a.centralKg - b.centralKg;
   const shown = hide ? "a hidden absolute difference" : `${round1(Math.abs(unit === "lb" ? delta * 2.2046226218 : delta)).toFixed(1)} ${unit}`;
   return <p>On {date}, {names[0]} minus {names[1]} is {shown} on the central estimates. This is a modelled difference, not a guaranteed outcome.</p>;
+}
+
+function basisName(value: string) {
+  if (value === "user-estimate") return "entered expenditure";
+  if (value === "model-estimated") return "PAL × Mifflin–St Jeor";
+  if (value === "retrospective") return "retrospective sketch";
+  return value;
 }
 
 function alignmentWarnings(versions: ScenarioVersion[]) {

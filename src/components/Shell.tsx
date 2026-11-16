@@ -61,7 +61,9 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
           </p>
           <div className="top-actions">
             <a href="#/onboarding">New profile</a>
-            <button type="button" className="btn quiet" onClick={() => signOut()}>
+            <button type="button" className="btn quiet" onClick={() => {
+              if (window.confirm("Sign out of this session? The data stays in this browser. Nothing is uploaded or deleted.")) signOut();
+            }}>
               Sign out
             </button>
           </div>

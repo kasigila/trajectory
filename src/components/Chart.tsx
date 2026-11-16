@@ -54,15 +54,25 @@ export function TrajectoryChart(props: Props) {
     return props.unit === "lb" ? value * 2.2046226218 : value;
   };
   const [focus, setFocus] = useState<string | null>(dates.at(-1) ?? null);
+  const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     if (!focus || !dates.includes(focus)) setFocus(dates.at(-1) ?? null);
   }, [dates, focus]);
 
+  const seriesValues = props.series.flatMap((series) => series.points.flatMap((p) => [plot(p.kg), p.lower != null ? plot(p.lower) : plot(p.kg), p.upper != null ? plot(p.upper) : plot(p.kg)]));
+  const seriesMin = seriesValues.length ? Math.min(...seriesValues) : null;
+  const seriesMax = seriesValues.length ? Math.max(...seriesValues) : null;
+  const slack = seriesMin != null && seriesMax != null ? Math.max(1.5, (seriesMax - seriesMin) * 0.8) : Infinity;
+  const inScale = (value: number) => {
+    if (seriesMin == null || seriesMax == null) return true;
+    return value >= seriesMin - slack && value <= seriesMax + slack;
+  };
+  const offScaleObservations = (props.observations ?? []).filter((obs) => !inScale(plot(obs.kg)));
   const yValues = [
-    ...props.series.flatMap((series) => series.points.flatMap((p) => [plot(p.kg), p.lower != null ? plot(p.lower) : plot(p.kg), p.upper != null ? plot(p.upper) : plot(p.kg)])),
-    ...(props.observations ?? []).map((o) => plot(o.kg)),
-    ...(props.trend ?? []).map((t) => plot(t.kg)),
-    props.goalKg != null && !props.hideAbsolute ? plot(props.goalKg) : null,
+    ...seriesValues,
+    ...(props.observations ?? []).filter((obs) => inScale(plot(obs.kg))).map((obs) => plot(obs.kg)),
+    ...(props.trend ?? []).filter((item) => inScale(plot(item.kg))).map((item) => plot(item.kg)),
+    props.goalKg != null && !props.hideAbsolute && inScale(plot(props.goalKg)) ? plot(props.goalKg) : null,
   ].filter((n): n is number => n != null && Number.isFinite(n));
   const min = yValues.length ? Math.min(...yValues) : 0;
   const max = yValues.length ? Math.max(...yValues) : 1;
@@ -112,10 +122,9 @@ export function TrajectoryChart(props: Props) {
     <figure className={props.prominent ? "chart-block chart-hero" : "chart-block"}>
       <figcaption>
         <p>{props.caption}</p>
-        <p className="summary">{summary}</p>
       </figcaption>
       <div
-        className="chart-frame"
+        className="chart-plot"
         tabIndex={0}
         role="group"
         aria-label={`${props.caption}. ${summary} Use left and right arrow keys to inspect a date. A data table follows.`}
@@ -152,14 +161,14 @@ export function TrajectoryChart(props: Props) {
           {props.series.filter((series) => series.band).map((series) => (
             <path key={series.id + "-band"} d={bandPath(series, xOf, yOf)} className="band" />
           ))}
-          {props.goalKg != null && !props.hideAbsolute ? (
+          {props.goalKg != null && !props.hideAbsolute && inScale(plot(props.goalKg)) ? (
             <line x1={PAD.l} x2={W - PAD.r} y1={yOf(props.goalKg)} y2={yOf(props.goalKg)} className="goal" />
           ) : null}
           {props.trend && props.trend.length > 1 ? <path d={linePath(props.trend.map((p) => [xOf(p.date), yOf(p.kg)]))} className="trend" /> : null}
           {props.series.map((series, index) => (
             <path key={series.id} d={linePath(series.points.map((p) => [xOf(p.date), yOf(p.kg)]))} className={`series series-${index}`} style={{ strokeDasharray: series.dash }} />
           ))}
-          {(props.observations ?? []).map((obs, index) => (
+          {(props.observations ?? []).filter((obs) => inScale(plot(obs.kg))).map((obs, index) => (
             <circle key={obs.id} cx={xOf(obs.date) + (index % 3) - 1} cy={yOf(obs.kg)} r="4.2" className="obs" />
           ))}
           {(props.cycleDates ?? []).map((date) => (
@@ -191,16 +200,19 @@ export function TrajectoryChart(props: Props) {
             </>
           ) : null}
         </svg>
-        <p className="live" aria-live="polite">
-          {live}
-        </p>
       </div>
+      <p className="live" aria-live="polite">
+        {live}
+      </p>
+      <p className="summary">{summary}</p>
+      {offScaleObservations.length ? (
+        <p className="fine">{offScaleObservations.length} weigh-in{offScaleObservations.length === 1 ? "" : "s"} sit far from this forecast, so the axis stays on the projection. Those readings remain in the table.</p>
+      ) : null}
       <ul className="legend">
         {props.series.map((series, index) => (
           <li key={series.id}>
             <i className={`swatch series-${index}`} style={{ borderTopStyle: series.dash ? "dashed" : "solid" }} />
-            {series.label}
-            {series.band ? " with sensitivity range" : ""}
+            {series.band && seriesHasRange(series, props, anchor) ? `${series.label}, with a sensitivity range` : series.label}
           </li>
         ))}
         {props.trend?.length ? (
@@ -220,13 +232,18 @@ export function TrajectoryChart(props: Props) {
         ) : null}
         {props.goalKg != null ? (
           <li>
-            <i className="swatch goal" /> {props.goalLabel || "Your reference"}, not a recommendation
+            <i className="swatch goal" /> {props.goalLabel || "Chart marker"}, not a recommendation
           </li>
         ) : null}
       </ul>
       {props.goalKg != null ? <p className="fine">A crossing date is not shown. This build does not treat the Hall equations as validated for a goal-crossing date.</p> : null}
       <details className="table-disclosure">
         <summary>Data table</summary>
+        {dates.length > 21 ? (
+          <button type="button" className="btn quiet" onClick={() => setShowAll((value) => !value)}>
+            {showAll ? "Show fewer dates" : `Show all ${dates.length} dates`}
+          </button>
+        ) : null}
         <div className="table-wrap">
           <table>
             <caption>{props.caption}. Values are shown to 0.1 kg so the table does not imply gram-level foresight. The sensitivity columns are a range, not a confidence interval.</caption>
@@ -249,7 +266,7 @@ export function TrajectoryChart(props: Props) {
               </tr>
             </thead>
             <tbody>
-              {dates.map((date) => (
+              {(showAll || dates.length <= 21 ? dates : [...dates.slice(0, 14), ...dates.slice(-7)]).map((date) => (
                 <tr key={date} className={date === focus ? "is-focus" : undefined}>
                   <th scope="row">{formatDate(date, props.dateStyle ?? "dmy")}</th>
                   {props.series.map((series) => {
@@ -258,8 +275,8 @@ export function TrajectoryChart(props: Props) {
                   })}
                   {props.series.some((s) => s.band) ? (
                     <>
-                      <td>{cell(props.series.find((s) => s.band)?.points.find((p) => p.date === date)?.lower, props, anchor)}</td>
-                      <td>{cell(props.series.find((s) => s.band)?.points.find((p) => p.date === date)?.upper, props, anchor)}</td>
+                      <td>{rangeCell(props.series.find((s) => s.band)?.points.find((p) => p.date === date)?.lower, props.series.find((s) => s.band)?.points.find((p) => p.date === date)?.kg, props, anchor)}</td>
+                      <td>{rangeCell(props.series.find((s) => s.band)?.points.find((p) => p.date === date)?.upper, props.series.find((s) => s.band)?.points.find((p) => p.date === date)?.kg, props, anchor)}</td>
                     </>
                   ) : null}
                   <td>{obsText(props, date, anchor)}</td>
@@ -280,6 +297,11 @@ function shown(kg: number, props: Props, anchor: number) {
     return `${round1(delta).toFixed(1)} ${props.unit} from the first point`;
   }
   return formatKg(kg, props.unit, false);
+}
+
+function rangeCell(edge: number | undefined, central: number | undefined, props: Props, anchor: number) {
+  if (edge == null || central == null || shown(edge, props, anchor) === shown(central, props, anchor)) return "—";
+  return shown(edge, props, anchor);
 }
 
 function cell(kg: number | null | undefined, props: Props, anchor: number) {
@@ -328,9 +350,8 @@ function describeFocus(props: Props, date: string | null, anchor: number) {
     const point = series.points.find((item) => item.date === date);
     if (!point) return;
     bits.push(`${series.label}: ${shown(point.kg, props, anchor)}`);
-    if (point.lower != null && point.upper != null) {
-      bits.push(`sensitivity range ${shown(point.lower, props, anchor)} to ${shown(point.upper, props, anchor)}`);
-    }
+    const range = rangePhrase(point.lower, point.upper, props, anchor);
+    if (range) bits.push(`sensitivity range ${range}`);
     if (point.intake != null) bits.push(`planned intake ${formatKcal(point.intake)}`);
     if (point.expenditure != null) bits.push(`Hall expenditure ${formatKcal(point.expenditure)}`);
   });
@@ -350,8 +371,19 @@ function textSummary(props: Props, anchor: number) {
   const last = primary.points[primary.points.length - 1];
   const a = shown(first.kg, props, anchor);
   const b = shown(last.kg, props, anchor);
-  const low = last.lower != null ? shown(last.lower, props, anchor) : null;
-  const high = last.upper != null ? shown(last.upper, props, anchor) : null;
-  const range = low && high ? ` On the last day the sensitivity range is ${low} to ${high}.` : "";
-  return `The first series runs from ${a} on ${formatDate(first.date, props.dateStyle ?? "dmy")} to ${b} on ${formatDate(last.date, props.dateStyle ?? "dmy")}.${range} This is not a predicted scale reading.`;
+  const range = rangePhrase(last.lower, last.upper, props, anchor);
+  const rangeSentence = range ? ` On the last day the sensitivity range is ${range}.` : " The published sensitivity arms do not separate at 0.1 kg, so no band is claimed.";
+  return `The first series runs from ${a} on ${formatDate(first.date, props.dateStyle ?? "dmy")} to ${b} on ${formatDate(last.date, props.dateStyle ?? "dmy")}.${rangeSentence} This is not a predicted scale reading.`;
+}
+
+function rangePhrase(lower: number | undefined, upper: number | undefined, props: Props, anchor: number) {
+  if (lower == null || upper == null || !Number.isFinite(lower) || !Number.isFinite(upper)) return null;
+  const low = shown(lower, props, anchor);
+  const high = shown(upper, props, anchor);
+  if (low === high) return null;
+  return `${low} to ${high}`;
+}
+
+function seriesHasRange(series: ChartSeries, props: Props, anchor: number) {
+  return series.points.some((point) => rangePhrase(point.lower, point.upper, props, anchor));
 }

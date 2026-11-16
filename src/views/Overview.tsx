@@ -53,7 +53,7 @@ export function Overview() {
         <article>
           <h2>End of horizon</h2>
           <p className="figure">{lastPoint ? weight(lastPoint.centralKg, account.preferences) : "—"}</p>
-          <p>{lastPoint ? `Central estimate on ${when(lastPoint.date, account.preferences)}. Range ${weight(lastPoint.lowerKg, account.preferences)} – ${weight(lastPoint.upperKg, account.preferences)}. Not a scale prediction.` : "No run yet."}</p>
+          <p>{lastPoint ? `Central estimate on ${when(lastPoint.date, account.preferences)}. ${rangeLine(lastPoint.lowerKg, lastPoint.upperKg, account.preferences)}` : "No run yet."}</p>
         </article>
       </div>
       <p className="fine">Baseline expenditure on the profile: {profile.energyBasis === "model-estimated" ? "PAL × Mifflin–St Jeor RMR" : energy(profile.maintenanceKcal ?? 0)}. Reference weight {weight(profile.referenceWeightKg, account.preferences)} on {when(profile.referenceDate, account.preferences)}. Model input: {parameter}.</p>
@@ -65,4 +65,11 @@ export function Overview() {
       </div>
     </section>
   );
+}
+
+function rangeLine(lower: number, upper: number, prefs: Parameters<typeof weight>[1]) {
+  const low = weight(lower, prefs);
+  const high = weight(upper, prefs);
+  if (low === high) return "The sensitivity arms do not separate at 0.1 kg, so no range is shown. Not a scale prediction.";
+  return `Range ${low} – ${high}. Not a scale prediction.`;
 }

@@ -31,7 +31,7 @@ export function Insights() {
       </article>
       <article className="card">
         <h2>Latest saved change</h2>
-        <p>{version?.change.narrative ?? "Save a scenario to see an explanation."}</p>
+        <p className="change-copy">{version?.change.narrative ?? "Save a scenario to see an explanation."}</p>
       </article>
       <article className="card">
         <h2>Readings and the original forecast</h2>

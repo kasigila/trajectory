@@ -75,6 +75,7 @@ export const LIMITS = {
   pal: [0.5, 5] as const,
   bodyFatPct: [2, 70] as const,
   leanMassKg: [10, 200] as const,
+  waistCm: [40, 200] as const,
   ageMin: 18,
   ageMax: 120,
   maintenanceKcal: [0, 20000] as const,

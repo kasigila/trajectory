@@ -2,13 +2,13 @@ import { useMemo, useState } from "react";
 import { TrajectoryChart } from "../components/Chart";
 import { PageTitle } from "../components/Shell";
 import { Button, Field, Notice } from "../components/ui";
-import { energy, weight, when } from "../format";
+import { energy, stamp, weight, when } from "../format";
 import { parseCsv, parseLooseDate, parseNumber, type DateOrder } from "../model/csv";
 import { todayIso } from "../model/dates";
 import { LIMITS } from "../model/parameters";
 import { TREND_DESCRIPTION, smoothObservations } from "../model/trend";
-import { lbToKg } from "../model/units";
-import { addComposition, addObservation, addOtherMeasurement, commitImport, deleteObservation, updateObservation, updatePreferences, useSession } from "../state/store";
+import { kgToLb, lbToKg, round1 } from "../model/units";
+import { addComposition, addObservation, addOtherMeasurement, commitImport, deleteObservation, restoreObservation, updateObservation, updatePreferences, useSession } from "../state/store";
 
 const SAMPLE = `date,weight,unit,note
 2026-09-15,86.6,kg,home scale
@@ -41,7 +41,7 @@ export function Progress() {
       </label>
       {original ? (
         <TrajectoryChart
-          caption={`Original forecast for ${scenario?.name}, generated ${original.forecast.completedAt}`}
+          caption={`Original forecast for ${scenario?.name}. Generated ${stamp(original.forecast.completedAt)}.`}
           unit={account.preferences.unit}
           hideAbsolute={account.preferences.hideWeight}
           dateStyle={account.preferences.dateFormat}
@@ -70,16 +70,18 @@ export function Progress() {
           importBatchId: null,
           note,
         });
-        if (!result.ok) setError(result.message);
-        else {
-          setError(null);
-          setMessage(result.warning ?? "Reading saved. The forecast and the plan were not changed.");
+        if (!result.ok) {
+          setError(result.message);
+          return false;
         }
+        setError(null);
+        setMessage(result.warning ?? "Reading saved. The forecast and the plan were not changed.");
+        return true;
       }} />
       <h2>History</h2>
       <ul className="plain">
         {active.map((obs) => (
-          <ObservationRow key={obs.id} id={obs.id} label={`${when(obs.localDate, account.preferences)} ${obs.localTime} · ${weight(obs.valueKg, account.preferences)} · ${obs.source}${obs.note ? ` · ${obs.note}` : ""}`} corrections={obs.corrections.length} onSave={(value, note) => {
+          <ObservationRow key={obs.id} id={obs.id} label={`${when(obs.localDate, account.preferences)} ${obs.localTime} · ${weight(obs.valueKg, account.preferences)} · ${obs.source}${obs.note ? ` · ${obs.note}` : ""}`} corrections={obs.corrections.length} initialValue={String(round1(account.preferences.unit === "lb" ? kgToLb(obs.valueKg) : obs.valueKg))} initialNote={obs.note} onSave={(value, note) => {
             const kg = account.preferences.unit === "lb" ? lbToKg(value) : value;
             const result = updateObservation(account.id, obs.id, kg, note);
             if (!result.ok) setError(result.message);
@@ -89,12 +91,24 @@ export function Progress() {
       </ul>
       <details>
         <summary>Removed readings</summary>
-        <ul>{observations.filter((obs) => obs.deletedAt).map((obs) => <li key={obs.id}>{obs.localDate} · removed {obs.deletedAt}</li>)}</ul>
+        <ul>
+          {observations.filter((obs) => obs.deletedAt).map((obs) => (
+            <li key={obs.id}>
+              {when(obs.localDate, account.preferences)} · {weight(obs.valueKg, account.preferences)} · removed {stamp(obs.deletedAt ?? "")}
+              <button type="button" onClick={() => { const result = restoreObservation(account.id, obs.id); if (!result.ok) setError(result.message); else setMessage("Reading restored to the chart. The forecast was not changed."); }}>Restore</button>
+            </li>
+          ))}
+        </ul>
       </details>
-      <CsvImport paused={account.preferences.pauseTracking} timeZone={account.preferences.timeZone} existingDates={active.map((obs) => obs.localDate)} onCommit={async (rows, text) => {
+      <CsvImport paused={account.preferences.pauseTracking} timeZone={account.preferences.timeZone} referenceKg={profile.referenceWeightKg} existingDates={active.map((obs) => obs.localDate)} onCommit={async (rows, text) => {
         const result = await commitImport(account.id, { profileId: profile.id, timeZone: account.preferences.timeZone, sourceLabel: "csv", fileText: text, rows });
-        if (!result.ok) setError(result.message);
-        else setMessage(result.warning ?? "Import finished.");
+        if (!result.ok) {
+          setError(result.message);
+          return false;
+        }
+        setError(null);
+        setMessage(result.warning ?? "Import finished.");
+        return true;
       }} />
       <OtherLogs />
       <p className="fine">Software store range for a reading: {LIMITS.weightKg[0]}–{LIMITS.weightKg[1]} kg. Values outside it are refused and not clamped. This is not a clinical limit.</p>
@@ -105,7 +119,7 @@ export function Progress() {
   );
 }
 
-function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: number, unit: "kg" | "lb", date: string, time: string, note: string) => void }) {
+function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: number, unit: "kg" | "lb", date: string, time: string, note: string) => boolean }) {
   const [value, setValue] = useState("");
   const [unit, setUnit] = useState<"kg" | "lb">("kg");
   const [date, setDate] = useState("");
@@ -113,12 +127,18 @@ function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: numb
   const [note, setNote] = useState("");
   if (paused) return <p>The entry form is hidden while tracking is paused.</p>;
   return (
-    <form className="card" onSubmit={(event) => { event.preventDefault(); onSave(Number(value), unit, date, time, note); }}>
+    <form className="card" onSubmit={(event) => {
+      event.preventDefault();
+      if (onSave(Number(value), unit, date, time, note)) {
+        setValue("");
+        setNote("");
+      }
+    }}>
       <h2>Add a weigh-in</h2>
       <div className="grid-2">
         <Field label="Value"><input required value={value} onChange={(event) => setValue(event.target.value)} /></Field>
         <Field label="Unit"><select value={unit} onChange={(event) => setUnit(event.target.value as "kg" | "lb")}><option value="kg">kg</option><option value="lb">lb</option></select></Field>
-        <Field label="Date"><input required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+        <Field label="Date" hint="Use the calendar. The stored date is year-month-day."><input required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
         <Field label="Time"><input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></Field>
       </div>
       <Field label="Note"><input value={note} onChange={(event) => setNote(event.target.value)} /></Field>
@@ -127,10 +147,10 @@ function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: numb
   );
 }
 
-function ObservationRow({ label, corrections, onSave, onDelete }: { id: string; label: string; corrections: number; onSave: (value: number, note: string) => void; onDelete: () => void }) {
+function ObservationRow({ label, corrections, initialValue, initialNote, onSave, onDelete }: { id: string; label: string; corrections: number; initialValue: string; initialNote: string; onSave: (value: number, note: string) => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
-  const [note, setNote] = useState("");
+  const [value, setValue] = useState(initialValue);
+  const [note, setNote] = useState(initialNote);
   return (
     <li>
       {label}
@@ -148,7 +168,7 @@ function ObservationRow({ label, corrections, onSave, onDelete }: { id: string; 
   );
 }
 
-function CsvImport({ paused, existingDates, onCommit }: { paused: boolean; timeZone: string; existingDates: string[]; onCommit: (rows: { localDate: string; localTime: string; value: number; unit: "kg" | "lb"; note: string; sourceRecordId: string }[], text: string) => Promise<void> }) {
+function CsvImport({ paused, existingDates, referenceKg, onCommit }: { paused: boolean; timeZone: string; existingDates: string[]; referenceKg: number; onCommit: (rows: { localDate: string; localTime: string; value: number; unit: "kg" | "lb"; note: string; sourceRecordId: string }[], text: string) => Promise<boolean> }) {
   const [text, setText] = useState("");
   const [order, setOrder] = useState<DateOrder>("ymd");
   const [dateCol, setDateCol] = useState(0);
@@ -165,8 +185,10 @@ function CsvImport({ paused, existingDates, onCommit }: { paused: boolean; timeZ
     const unitText = (row[unitCol] ?? "").toLowerCase();
     const unit = unitText.includes("lb") ? "lb" : unitText.includes("kg") ? "kg" : fallback;
     const duplicate = date ? existingDates.includes(date) : false;
+    const kg = value == null ? null : unit === "lb" ? lbToKg(value) : value;
+    const far = kg != null && Math.abs(kg - referenceKg) > Math.max(8, referenceKg * 0.15);
     const error = !date ? "Date not recognised" : value == null ? "Weight not numeric" : "";
-    return { index, date, value, unit, note: row[noteCol] ?? "", duplicate, error, sourceRecordId: `row-${index + 2}` };
+    return { index, date, value, unit, note: row[noteCol] ?? "", duplicate, far, error, sourceRecordId: `row-${index + 2}` };
   });
   return (
     <div className="card">
@@ -195,16 +217,16 @@ function CsvImport({ paused, existingDates, onCommit }: { paused: boolean; timeZ
               <tbody>
                 {preview.map((row) => (
                   <tr key={row.index}>
-                    <td><input type="checkbox" checked={picked[row.index] ?? !row.error} disabled={Boolean(row.error)} onChange={(event) => setPicked({ ...picked, [row.index]: event.target.checked })} /></td>
+                    <td><input type="checkbox" checked={picked[row.index] ?? (!row.error && !row.far)} disabled={Boolean(row.error)} onChange={(event) => setPicked({ ...picked, [row.index]: event.target.checked })} /></td>
                     <td>{row.date ?? "—"}</td>
                     <td>{row.value ?? "—"} {row.unit}</td>
-                    <td>{row.error || (row.duplicate ? "Same calendar day already has a reading. You can still import it as an additional reading." : "Ready")}</td>
+                    <td>{row.error || (row.far ? "Far from the profile reference weight. Leave it unchecked unless you mean to import it. The chart axis will not stretch to it." : row.duplicate ? "Same calendar day already has a reading. You can still import it as an additional reading." : "Ready")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <Button variant="primary" onClick={() => void onCommit(preview.filter((row) => (picked[row.index] ?? !row.error) && row.date && row.value != null).map((row) => ({ localDate: row.date!, localTime: "07:00", value: row.value!, unit: row.unit, note: row.note, sourceRecordId: row.sourceRecordId })), text)}>
+          <Button variant="primary" onClick={() => void onCommit(preview.filter((row) => (picked[row.index] ?? (!row.error && !row.far)) && row.date && row.value != null).map((row) => ({ localDate: row.date!, localTime: "07:00", value: row.value!, unit: row.unit, note: row.note, sourceRecordId: row.sourceRecordId })), text).then((ok) => { if (ok) { setText(""); setPicked({}); } })}>
             Import selected rows
           </Button>
         </>
@@ -228,18 +250,25 @@ function OtherLogs() {
   const [waist, setWaist] = useState("");
   const [fat, setFat] = useState("");
   const [date, setDate] = useState("");
+  const [note, setNote] = useState<string | null>(null);
   if (!account || !profile) return null;
   return (
     <div className="card">
       <h2>Other measurements</h2>
       <p>Waist and body composition are optional records. They are not inputs to the weight model.</p>
-      <Field label="Date"><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
-      <Field label="Waist, cm"><input value={waist} onChange={(event) => setWaist(event.target.value)} /></Field>
-      <Button onClick={() => date && addOtherMeasurement(account.id, { profileId: profile.id, date, kind: "waist", label: "Waist", valueCm: Number(waist), note: "" })}>Save waist</Button>
-      <Field label="Body fat, percent"><input value={fat} onChange={(event) => setFat(event.target.value)} /></Field>
+      {note ? <p role="status">{note}</p> : null}
+      <Field label="Date" hint="Use the calendar. The stored date is year-month-day."><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+      <Field label="Waist, cm" hint={`Stored between ${LIMITS.waistCm[0]} and ${LIMITS.waistCm[1]} cm. Not a clinical range, and not used by the Hall model.`}><input value={waist} onChange={(event) => setWaist(event.target.value)} /></Field>
+      <Button onClick={() => {
+        const result = addOtherMeasurement(account.id, { profileId: profile.id, date, kind: "waist", label: "Waist", valueCm: Number(waist), note: "" });
+        setNote(result.ok ? "Waist saved. It is not used by the forecast." : result.message);
+        if (result.ok) setWaist("");
+      }}>Save waist</Button>
+      <Field label="Body fat, percent" hint={`Stored between ${LIMITS.bodyFatPct[0]} and ${LIMITS.bodyFatPct[1]} percent, or leave blank.`}><input value={fat} onChange={(event) => setFat(event.target.value)} /></Field>
       <Button onClick={() => {
         const result = addComposition(account.id, { profileId: profile.id, date, bodyFatPct: fat ? Number(fat) : null, leanMassKg: null, source: "manual", method: "unspecified", note: "Consumer estimates vary." });
-        if (!result.ok) alert(result.message);
+        setNote(result.ok ? "Body fat saved. The Hall forecast was not changed." : result.message);
+        if (result.ok) setFat("");
       }}>Save composition</Button>
       <ul>
         {account.otherMeasurements.filter((item) => item.profileId === profile.id).map((item) => <li key={item.id}>{item.date}: {item.label} {item.valueCm} cm</li>)}
