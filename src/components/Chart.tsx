@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { centralCrossing } from "../model/crossing";
 import { formatDate } from "../model/dates";
 import { trendNote, weeklyPoints } from "../model/trend-note";
-import { formatKg, formatKcal, round1 } from "../model/units";
+import { formatKg, formatKcal, kgToLb, round1 } from "../model/units";
 import { weighInsFar } from "../format";
 
 export interface SeriesPoint {
@@ -63,7 +63,7 @@ export function TrajectoryChart(props: Props) {
   const anchor = props.series[0]?.points[0]?.kg ?? props.observations?.[0]?.kg ?? 0;
   const plot = (kg: number) => {
     const value = props.hideAbsolute ? kg - anchor : kg;
-    return props.unit === "lb" ? value * 2.2046226218 : value;
+    return props.unit === "lb" ? kgToLb(value) : value;
   };
   const [focus, setFocus] = useState<string | null>(dates.at(-1) ?? null);
   const [showAll, setShowAll] = useState(false);
@@ -317,7 +317,7 @@ export function TrajectoryChart(props: Props) {
         ) : null}
         <div className="table-wrap">
           <table>
-            <caption>{props.caption}. Values are shown to 0.1 kg so the table does not imply gram-level foresight. The sensitivity columns are a range, not a confidence interval.</caption>
+            <caption>{props.caption}. Shown to 0.1 {props.unit}. The range is sensitivity, not a promise.</caption>
             <thead>
               <tr>
                 <th scope="col">Date</th>
@@ -424,7 +424,7 @@ function copyPaint(source: Element, clone: Element) {
 
 function shown(kg: number, props: Props, anchor: number) {
   if (props.hideAbsolute) {
-    const delta = props.unit === "lb" ? (kg - anchor) * 2.2046226218 : kg - anchor;
+    const delta = props.unit === "lb" ? kgToLb(kg - anchor) : kg - anchor;
     return `${round1(delta).toFixed(1)} ${props.unit} from the first point`;
   }
   return formatKg(kg, props.unit, false);
@@ -484,14 +484,14 @@ function describeFocus(props: Props, date: string | null, anchor: number) {
     const range = rangePhrase(point.lower, point.upper, props, anchor);
     if (range) bits.push(`sensitivity range ${range}`);
     if (point.intake != null) bits.push(`planned intake ${formatKcal(point.intake)}`);
-    if (point.expenditure != null) bits.push(`Hall expenditure ${formatKcal(point.expenditure)}`);
+    if (point.expenditure != null) bits.push(`Expenditure ${formatKcal(point.expenditure)}`);
   });
   const obs = (props.observations ?? []).filter((item) => item.date === date);
   if (obs.length) bits.push(`observed ${obs.map((item) => `${shown(item.kg, props, anchor)}, ${item.source}`).join("; ")}`);
   else bits.push("no weigh-in on this date");
   const trend = props.trend?.find((item) => item.date === date);
   if (trend) bits.push(`trend estimate ${shown(trend.kg, props, anchor)}`);
-  bits.push("Modelled points are end-of-day Hall projections, not scale predictions.");
+  bits.push("These points are the saved plan, not a scale reading.");
   return bits.join(". ");
 }
 
@@ -503,7 +503,7 @@ function textSummary(props: Props, anchor: number) {
   const a = shown(first.kg, props, anchor);
   const b = shown(last.kg, props, anchor);
   const range = rangePhrase(last.lower, last.upper, props, anchor);
-  const rangeSentence = range ? ` On the last day the sensitivity range is ${range}.` : " The published sensitivity arms do not separate at 0.1 kg, so no band is claimed.";
+  const rangeSentence = range ? ` On the last day the sensitivity range is ${range}.` : ` The two ends round to the same 0.1 ${props.unit}, so no band is shown.`;
   return `The first series runs from ${a} on ${formatDate(first.date, props.dateStyle ?? "dmy")} to ${b} on ${formatDate(last.date, props.dateStyle ?? "dmy")}.${rangeSentence} This is not a predicted scale reading.`;
 }
 

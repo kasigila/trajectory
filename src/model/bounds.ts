@@ -1,10 +1,11 @@
 import { LIMITS } from "./parameters";
+import { formatKg } from "./units";
 
 /** One set of software bounds for onboarding, the simulator, and progress. Not clinical ranges. */
 
-export function weightBoundMessage(kg: number) {
+export function weightBoundMessage(kg: number, unit: "kg" | "lb" = "kg") {
   if (!Number.isFinite(kg) || kg < LIMITS.weightKg[0] || kg > LIMITS.weightKg[1]) {
-    return `Weight must be between ${LIMITS.weightKg[0]} and ${LIMITS.weightKg[1]} kg. The value was not changed. This is a software bound, not a clinical limit.`;
+    return `Weight must be between ${formatKg(LIMITS.weightKg[0], unit)} and ${formatKg(LIMITS.weightKg[1], unit)}. The value was not changed. This is a software bound, not a clinical limit.`;
   }
   return null;
 }
@@ -16,9 +17,9 @@ export function bodyFatBoundMessage(pct: number) {
   return null;
 }
 
-export function leanBoundMessage(lean: number, weightKg: number) {
+export function leanBoundMessage(lean: number, weightKg: number, unit: "kg" | "lb" = "kg") {
   if (!Number.isFinite(lean) || lean < LIMITS.leanMassKg[0] || lean > LIMITS.leanMassKg[1] || !(lean < weightKg)) {
-    return `Lean mass must be between ${LIMITS.leanMassKg[0]} and ${LIMITS.leanMassKg[1]} kg and below the reference weight, or left blank. The value was not changed.`;
+    return `Lean mass must be between ${formatKg(LIMITS.leanMassKg[0], unit)} and ${formatKg(LIMITS.leanMassKg[1], unit)} and below the reference weight, or left blank. The value was not changed.`;
   }
   return null;
 }

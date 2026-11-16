@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { DISCLAIMER } from "../copy";
 import { ageOn, isIsoDate, todayIso } from "../model/dates";
 import { bodyFatBoundMessage, horizonBoundMessage, intakeBoundMessage, leanBoundMessage, weightBoundMessage } from "../model/bounds";
 import { ACTIVITY_CATEGORIES, CATEGORY_LABEL, LIMITS } from "../model/parameters";
@@ -7,7 +6,7 @@ import { ftInToCm, lbToKg } from "../model/units";
 import { go } from "../route";
 import { finishOnboarding, saveOnboarding, startOnboarding, useDb } from "../state/store";
 import type { OnboardingDraft } from "../state/types";
-import { Button, Field, Notice } from "../components/ui";
+import { Button, Disclosure, Field, Notice } from "../components/ui";
 
 const STEPS = ["Purpose", "Eligibility", "Units", "Body", "Parameter", "Composition", "Energy", "Plan", "Review"];
 
@@ -42,7 +41,7 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
     const result = await finishOnboarding(draft, passphrase);
     setBusy(false);
     if (!result.ok) setError(result.message);
-    else go("simulator");
+    else go("overview");
   }
   return (
     <main className="gate">
@@ -59,14 +58,13 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
       <h1>{STEPS[draft.step]}</h1>
       {draft.step === 0 ? (
         <>
-          <p>Trajectory shows how a plan you write could move a Hall-model weight trajectory. It cannot tell you what to eat or how to train, and it will not change the plan for you.</p>
-          <p>{DISCLAIMER}</p>
+          <p>This shows what you would weigh on future dates if you follow a plan you write. It is not medical advice.</p>
           <label className="check"><input type="checkbox" checked={Boolean(draft.purposeAccepted)} onChange={(event) => patch({ purposeAccepted: event.target.checked })} /> I have read this. Use this purpose.</label>
         </>
       ) : null}
       {draft.step === 1 ? (
         <>
-          <Field label="Profile date of birth" hint="Age is used in the Jackson body-fat estimate and in Mifflin–St Jeor. Use the calendar. The stored date is year-month-day. This date is the profile’s, separate from the 18+ check.">
+          <Field label="Date of birth" hint="Used for age in the forecast. Separate from the 18+ check.">
             <input type="date" value={draft.birthDate} onChange={(event) => patch({ birthDate: event.target.value, eligibilityAccepted: true })} />
           </Field>
           <Field label="Excluded context" hint="If one of these applies, the app will not make a personalized forecast.">
@@ -84,8 +82,16 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
       ) : null}
       {draft.step === 2 ? (
         <>
-          <Field label="Weight unit"><select value={draft.unit} onChange={(event) => patch({ unit: event.target.value as "kg" | "lb", unitsAccepted: true })}><option value="kg">Kilograms</option><option value="lb">Pounds</option></select></Field>
-          <Field label="Height unit"><select value={draft.lengthUnit} onChange={(event) => patch({ lengthUnit: event.target.value as "cm" | "ft", unitsAccepted: true })}><option value="cm">Centimetres</option><option value="ft">Feet and inches</option></select></Field>
+          <Field label="Units">
+            <select value={draft.unit === "lb" ? "imperial" : "metric"} onChange={(event) => {
+              const imperial = event.target.value === "imperial";
+              patch({ unit: imperial ? "lb" : "kg", lengthUnit: imperial ? "ft" : "cm", unitsAccepted: true });
+            }}>
+              <option value="metric">Metric</option>
+              <option value="imperial">Imperial</option>
+            </select>
+          </Field>
+          <p>You can change this later in Settings.</p>
           <label className="check"><input type="checkbox" checked={Boolean(draft.unitsAccepted)} onChange={(event) => patch({ unitsAccepted: event.target.checked })} /> Use these units.</label>
         </>
       ) : null}
@@ -93,21 +99,22 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
         <>
           <Field label="Profile name"><input value={draft.label} onChange={(event) => patch({ label: event.target.value })} /></Field>
           {draft.lengthUnit === "cm" ? (
-            <Field label="Height, cm" hint="Used in the Jackson equation and in Mifflin–St Jeor."><input value={draft.heightCm} onChange={(event) => patch({ heightCm: event.target.value })} /></Field>
+            <Field label="Height, cm"><input value={draft.heightCm} onChange={(event) => patch({ heightCm: event.target.value })} /></Field>
           ) : (
             <div className="grid-2">
               <Field label="Feet"><input value={draft.heightFeet} onChange={(event) => patch({ heightFeet: event.target.value })} /></Field>
-              <Field label="Inches" hint="Used in the Jackson equation and in Mifflin–St Jeor."><input value={draft.heightInches} onChange={(event) => patch({ heightInches: event.target.value })} /></Field>
+              <Field label="Inches"><input value={draft.heightInches} onChange={(event) => patch({ heightInches: event.target.value })} /></Field>
             </div>
           )}
-          <Field label={`Reference weight, ${draft.unit}`} hint="The Hall model starts the first scenario day at this weight.">
+          <Field label={`Starting weight, ${draft.unit}`} hint="The forecast starts at this weight.">
             <input value={draft.weightKg} onChange={(event) => patch({ weightKg: event.target.value })} />
           </Field>
         </>
       ) : null}
       {draft.step === 4 ? (
         <>
-          <p>The Hall model uses a sex-related physiological parameter for the Jackson fat equation and the Mifflin–St Jeor resting equation. It is a model input, not a statement of identity. If you leave it unspecified, no personalized forecast is created. Nothing is guessed.</p>
+          <p>Pick the equation set, or leave it blank. Blank means no personal forecast.</p>
+          <Disclosure title="Why this is asked"><p>The forecast uses a published equation that differs for men and women. This is a model input, not a statement about identity.</p></Disclosure>
           <Field label="Parameter set">
             <select value={draft.sexParameter} onChange={(event) => patch({ sexParameter: event.target.value as OnboardingDraft["sexParameter"] })}>
               <option value="unspecified">Not sure / prefer not to provide</option>
@@ -119,10 +126,10 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
       ) : null}
       {draft.step === 5 ? (
         <>
-          <p>Optional. A body-fat percent replaces the Jackson estimate. Leave blank to use Jackson et al. 2002. Consumer estimates vary.</p>
+          <p>Optional. Leave blank if you do not know it.</p>
           <Field label="Body fat, percent"><input value={draft.bodyFatPct} onChange={(event) => patch({ bodyFatPct: event.target.value })} /></Field>
           <Field label="Source"><input value={draft.bodyFatSource} onChange={(event) => patch({ bodyFatSource: event.target.value })} /></Field>
-          <Field label="Lean mass, kg"><input value={draft.leanMassKg} onChange={(event) => patch({ leanMassKg: event.target.value })} /></Field>
+          <Field label={`Lean mass, ${draft.unit}`}><input value={draft.leanMassKg} onChange={(event) => patch({ leanMassKg: event.target.value })} /></Field>
         </>
       ) : null}
       {draft.step === 6 ? (
@@ -143,7 +150,7 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
               {ACTIVITY_CATEGORIES.map((item) => <option key={item} value={item}>{CATEGORY_LABEL[item]}</option>)}
             </select>
           </Field>
-          <Field label="Reference PAL" hint="Hall webappendix equation (8). Sedentary in that paper is 1.5.">
+          <Field label="Activity level" hint="Leave the usual value, 1.5, if you are unsure.">
             <input value={draft.referencePal} onChange={(event) => patch({ referencePal: event.target.value })} />
           </Field>
           <Field label="Reference steps" hint="Stored only. Steps are not converted to energy."><input value={draft.steps} onChange={(event) => patch({ steps: event.target.value })} /></Field>
@@ -158,7 +165,7 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
               <option value="weekday-weekend">Weekday / weekend pattern</option>
             </select>
           </Field>
-          <Field label="Start date" hint="Use the calendar. The stored date is year-month-day."><input type="date" value={draft.startDate} onChange={(event) => patch({ startDate: event.target.value })} /></Field>
+          <Field label="Start date"><input type="date" value={draft.startDate} onChange={(event) => patch({ startDate: event.target.value })} /></Field>
           <Field label="Horizon, days"><input value={draft.horizonDays} onChange={(event) => patch({ horizonDays: event.target.value })} /></Field>
           <Field label="Baseline intake, kcal" hint={intakeHint(draft.intakeKcal)}><input value={draft.intakeKcal} onChange={(event) => patch({ intakeKcal: event.target.value })} /></Field>
           {draft.template === "weekday-weekend" ? (
@@ -185,7 +192,7 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
           <li>Reference weight: {draft.weightKg || "—"} {draft.unit}</li>
           <li>Parameter: {parameterLabel(draft.sexParameter)}</li>
           <li>Body fat: {draft.bodyFatPct.trim() ? `${draft.bodyFatPct}%` : "Not entered"}{draft.bodyFatSource.trim() ? `, source ${draft.bodyFatSource.trim()}` : ""}</li>
-          <li>Lean mass: {draft.leanMassKg.trim() ? `${draft.leanMassKg} kg` : "Not entered"}</li>
+          <li>Lean mass: {draft.leanMassKg.trim() ? `${draft.leanMassKg} ${draft.unit}` : "Not entered"}</li>
           <li>Energy basis: {energyLabel(draft.energyBasis)}{draft.energyBasis === "user-estimate" ? `, ${draft.maintenanceKcal || "—"} kcal` : ""}</li>
           <li>Plan: {draft.scenarioName}, {draft.template}, {draft.horizonDays} days from {draft.startDate}, intake {draft.intakeKcal || "—"} kcal</li>
           <li>Excluded context: {draft.excludedContext}</li>
@@ -246,7 +253,7 @@ function stepError(draft: OnboardingDraft): string | null {
       return `Height must be between ${LIMITS.heightCm[0]} and ${LIMITS.heightCm[1]} cm. The value was not changed.`;
     }
     if (!draft.weightKg.trim()) return "Enter a reference weight before continuing.";
-    const weightProblem = weightBoundMessage(weightKg);
+    const weightProblem = weightBoundMessage(weightKg, draft.unit);
     if (weightProblem) return weightProblem;
   }
   if (draft.step === 5) {
@@ -257,7 +264,8 @@ function stepError(draft: OnboardingDraft): string | null {
     if (draft.leanMassKg.trim()) {
       const enteredWeight = Number(draft.weightKg);
       const weightKg = draft.unit === "lb" ? lbToKg(enteredWeight) : enteredWeight;
-      const leanProblem = leanBoundMessage(Number(draft.leanMassKg), weightKg);
+      const leanKg = draft.unit === "lb" ? lbToKg(Number(draft.leanMassKg)) : Number(draft.leanMassKg);
+      const leanProblem = leanBoundMessage(leanKg, weightKg, draft.unit);
       if (leanProblem) return leanProblem;
     }
   }

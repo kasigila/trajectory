@@ -1,5 +1,5 @@
 import { formatDate } from "./model/dates";
-import { formatKcal, formatKg, round1 } from "./model/units";
+import { formatKcal, formatKg, kgToLb, round1 } from "./model/units";
 import type { Preferences } from "./state/types";
 
 export function when(iso: string, prefs: Preferences) {
@@ -11,7 +11,7 @@ export function weight(kg: number, prefs: Preferences, hide = prefs.hideWeight) 
 }
 
 export function weightValue(kg: number, unit: "kg" | "lb") {
-  return unit === "lb" ? round1(kg * 2.2046226218) : round1(kg);
+  return unit === "lb" ? round1(kgToLb(kg)) : round1(kg);
 }
 
 export function energy(kcal: number) {

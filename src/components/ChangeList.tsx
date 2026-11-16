@@ -1,7 +1,7 @@
 import { changeLines, type ChangeExplanation } from "../model/explain";
 
-export function ChangeList({ change, dateStyle }: { change: ChangeExplanation | null | undefined; dateStyle: "iso" | "dmy" | "mdy" | "long" }) {
-  const lines = change ? changeLines(change, dateStyle) : ["Save a scenario to see an explanation."];
+export function ChangeList({ change, dateStyle, unit = "kg" }: { change: ChangeExplanation | null | undefined; dateStyle: "iso" | "dmy" | "mdy" | "long"; unit?: "kg" | "lb" }) {
+  const lines = change ? changeLines(change, dateStyle, unit) : ["Save a plan to see what changed."];
   return (
     <ul className="change-list">
       {lines.map((line) => (

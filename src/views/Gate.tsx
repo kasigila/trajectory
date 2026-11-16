@@ -16,14 +16,12 @@ export function Gate() {
       <main className="gate">
         <Logo />
         <p className="tagline">{TAGLINE}</p>
-        <h1>A studio for dated body-weight scenarios.</h1>
-        <p className="lede">Trajectory forecasts an adult’s weight from a plan you write, using the published Hall model. Your numbers stay in this browser. It is not a diet tracker and not a medical device.</p>
-        {db.deletionReceipt ? <Notice>Local data for “{db.deletionReceipt.label}” was removed on {stamp(db.deletionReceipt.at)}. This build has no server backup.</Notice> : null}
-        <Field label="Your date of birth" hint="Used only to enforce the 18+ limit. Use the calendar. Your profile can use a different date. Health-data permission is not part of this step.">
+        <h1>See what you would weigh</h1>
+        <p className="lede">For adults 18 and older. Not a medical device. Your numbers stay on this device.</p>
+        {db.deletionReceipt ? <Notice>Local data for “{db.deletionReceipt.label}” was removed on {stamp(db.deletionReceipt.at)}.</Notice> : null}
+        <Field label="Date of birth">
           <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
         </Field>
-        <Disclosure title="Terms">{TERMS}</Disclosure>
-        <Disclosure title="Privacy notice">{PRIVACY}</Disclosure>
         {error ? <p role="alert">{error}</p> : null}
         <Button
           variant="primary"
@@ -33,7 +31,7 @@ export function Gate() {
             else if (!sessionAccount()?.profiles.length) go("onboarding");
           }}
         >
-          I am 18 or older and I accept the terms and privacy notice
+          Continue
         </Button>
         <Button
           onClick={() => {
@@ -42,10 +40,11 @@ export function Gate() {
             else void restoreDemo().then(() => go("overview"));
           }}
         >
-          I am 18 or older. Show the sample forecast first
+          See a sample forecast
         </Button>
-        <p className="fine">The sample is a fictional profile so you can see a chart before the nine setup steps. It is not your data. You can replace it with your own profile afterward.</p>
-        <p className="fine">{DISCLAIMER}</p>
+        <Disclosure title="Terms">{TERMS}</Disclosure>
+        <Disclosure title="Privacy">{PRIVACY}</Disclosure>
+        <Disclosure title="About this app"><p>{DISCLAIMER}</p><p>The sample is a made-up profile. It is not your data.</p></Disclosure>
       </main>
     );
   }

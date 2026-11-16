@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChangeList } from "../components/ChangeList";
 import { PageTitle } from "../components/Shell";
-import { Button, Notice } from "../components/ui";
+import { Button, Disclosure, Notice } from "../components/ui";
 import { HOW_TO_READ } from "../copy";
 import { energy, weight } from "../format";
 import { proposeCalibration } from "../model/calibrate";
@@ -26,18 +26,17 @@ export function Insights() {
   const proposal = version ? proposeCalibration(version.inputSnapshot, forCalibration.map((obs) => ({ date: obs.localDate, kg: obs.valueKg }))) : null;
   return (
     <section>
-      <PageTitle kicker="Insights" title="What the lines mean" lede="Explanations stay descriptive. They do not judge a reading or rewrite a plan." />
-      <article className="card">
-        <h2>How to read the chart</h2>
+      <PageTitle kicker="Learn" title="About the model" lede="The chart is an estimate from a published model. It is not a scale reading." />
+      <Disclosure title="How to read the chart">
         <p>{HOW_TO_READ}</p>
-      </article>
+      </Disclosure>
       <article className="card">
         <h2>Latest saved change</h2>
-        <ChangeList change={version?.change} dateStyle={account.preferences.dateFormat} />
+        <ChangeList change={version?.change} dateStyle={account.preferences.dateFormat} unit={account.preferences.unit} />
       </article>
       <article className="card">
-        <h2>Readings and the original forecast</h2>
-        <p>{divergenceCopy(pairs)}</p>
+        <h2>Readings and the first forecast</h2>
+        <p>{divergenceCopy(pairs, account.preferences.unit)}</p>
       </article>
       <article className="card">
         <h2>Calibration</h2>
@@ -59,11 +58,10 @@ export function Insights() {
         ) : <p>A saved scenario is needed before a sketch can be described.</p>}
         {message ? <p role="status">{message}</p> : null}
       </article>
-      <article className="card">
-        <h2>Assumptions on the active version</h2>
+      <Disclosure title="Technical details">
         <ul>{version?.assumptions.map((line) => <li key={line}>{line}</li>) ?? <li>None yet.</li>}</ul>
-        <p className="fine">Model {MODEL.name}. {MODEL.shortCitation}. Not a clinically validated medical device.</p>
-      </article>
+        <p>{MODEL.name}. {MODEL.shortCitation}.</p>
+      </Disclosure>
     </section>
   );
 }

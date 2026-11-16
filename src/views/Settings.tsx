@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { PageTitle } from "../components/Shell";
-import { Button, Field, Notice } from "../components/ui";
+import { Button, Disclosure, Field, Notice } from "../components/ui";
 import { PRIVACY } from "../copy";
-import { stamp } from "../format";
+import { stamp, weight } from "../format";
+import { kgToLb, lbToKg } from "../model/units";
 import { MODEL } from "../model/parameters";
 import { EXPORT_FORMAT, thinForExport } from "../state/export";
 import { usageRows } from "../state/usage";
@@ -20,6 +21,7 @@ import {
   restoreDemo,
   restoreSnapshot,
   sessionAccount,
+  setUnitSystem,
   setFlag,
   setOptionalConsent,
   setPassphrase,
@@ -40,22 +42,16 @@ export function Settings() {
   const prefs = account.preferences;
   return (
     <section>
-      <PageTitle kicker="Settings" title="Preferences, privacy, and data" lede="Data for this session stays in this browser unless you export it." />
+      <PageTitle kicker="Settings" title="Settings" lede="Saved on this device." />
       {message ? <p role="status">{message}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       <article className="card">
         <h2>Display</h2>
         <div className="grid-2">
-          <Field label="Weight unit">
-            <select value={prefs.unit} onChange={(event) => updatePreferences(account.id, { unit: event.target.value as "kg" | "lb" })}>
-              <option value="kg">Kilograms</option>
-              <option value="lb">Pounds</option>
-            </select>
-          </Field>
-          <Field label="Height unit">
-            <select value={prefs.lengthUnit} onChange={(event) => updatePreferences(account.id, { lengthUnit: event.target.value as "cm" | "ft" })}>
-              <option value="cm">Centimetres</option>
-              <option value="ft">Feet and inches</option>
+          <Field label="Units">
+            <select value={prefs.unit === "lb" ? "imperial" : "metric"} onChange={(event) => setUnitSystem(account.id, event.target.value as "metric" | "imperial")}>
+              <option value="metric">Metric</option>
+              <option value="imperial">Imperial</option>
             </select>
           </Field>
           <Field label="Date format">
@@ -112,7 +108,8 @@ export function Settings() {
       </article>
       <article className="card">
         <h2>Privacy</h2>
-        <p>{PRIVACY}</p>
+        <p>Your numbers stay on this device.</p>
+        <Disclosure title="Details"><p>{PRIVACY}</p></Disclosure>
         <ul>
           <li>Profiles: {account.profiles.length}</li>
           <li>Scenarios: {account.scenarios.length}</li>
@@ -138,12 +135,14 @@ export function Settings() {
       </article>
       <ImportCard />
       <article className="card">
-        <h2>Model registry</h2>
-        <p>{MODEL.name}</p>
-        <p>Hall model, Lancet 2011. App version {MODEL.engineBuild}.</p>
-        <p className="fine">Stored ids, for a file comparison: {MODEL.id} · {MODEL.version} · {MODEL.engineBuild}</p>
-        <p>{MODEL.shortCitation}. These are the published adult equations. This build is not a clinically validated medical device. Older saved runs keep the model id they were generated with.</p>
-        <label className="check"><input type="checkbox" checked={account.featureFlags.advancedMath} onChange={(event) => setFlag(account.id, event.target.checked)} /> Show the parameter list in Insights-sized detail on the report</label>
+        <h2>About the model</h2>
+        <p>App version {MODEL.engineBuild}.</p>
+        <Disclosure title="Technical details">
+          <p>{MODEL.name}. {MODEL.shortCitation}.</p>
+          <p>Stored ids: {MODEL.id} · {MODEL.version} · {MODEL.engineBuild}</p>
+          <p>Older saved runs keep the model id they were generated with.</p>
+        </Disclosure>
+        <label className="check"><input type="checkbox" checked={account.featureFlags.advancedMath} onChange={(event) => setFlag(account.id, event.target.checked)} /> Show the parameter list on the report</label>
         <p className="fine">Feature flags: health sync locked off. Hosted accounts locked off. Cycle overlay follows your consent.</p>
         <h3>Masked summary</h3>
         <p>Scenarios {account.scenarios.length}. Readings {account.observations.filter((item) => !item.deletedAt).length}. No weight values are shown here.</p>
@@ -160,25 +159,31 @@ export function Settings() {
   );
 }
 
+function shownWeight(kg: number, unit: "kg" | "lb") {
+  return (unit === "lb" ? kgToLb(kg) : kg).toFixed(1);
+}
+
 function ProfileForm() {
   const { account, profile } = useSession();
+  const unit = account?.preferences.unit ?? "kg";
   const [height, setHeight] = useState(profile ? String(profile.heightCm) : "");
-  const [weightKg, setWeight] = useState(profile ? String(profile.referenceWeightKg) : "");
+  const [weightDraft, setWeightDraft] = useState(profile ? { unit, text: shownWeight(profile.referenceWeightKg, unit) } : { unit, text: "" });
   const [maintenance, setMaintenance] = useState(profile?.maintenanceKcal?.toString() ?? "");
   const [birth, setBirth] = useState(profile?.birthDate ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   if (!account || !profile) return null;
+  const weightText = weightDraft.unit === unit ? weightDraft.text : shownWeight(profile.referenceWeightKg, unit);
   return (
     <article className="card">
       <h2>Profile inputs</h2>
-      <p>Saving here does not rewrite scenarios. Each scenario keeps its snapshot until you re-run it from the simulator.</p>
+      <p>Saving here does not rewrite a plan you already saved.</p>
       {error ? <Notice tone="warn">{error}</Notice> : null}
       {saved ? <p role="status">{saved}</p> : null}
       <div className="grid-2">
-        <Field label="Date of birth" hint="Use the calendar. The stored date is year-month-day."><input type="date" value={birth} onChange={(event) => setBirth(event.target.value)} /></Field>
+        <Field label="Date of birth"><input type="date" value={birth} onChange={(event) => setBirth(event.target.value)} /></Field>
         <Field label="Height, cm"><input value={height} onChange={(event) => setHeight(event.target.value)} /></Field>
-        <Field label="Reference weight, kg"><input value={weightKg} onChange={(event) => setWeight(event.target.value)} /></Field>
+        <Field label={`Reference weight, ${unit}`}><input value={weightText} onChange={(event) => setWeightDraft({ unit, text: event.target.value })} /></Field>
         <Field label="Maintenance kcal"><input value={maintenance} onChange={(event) => setMaintenance(event.target.value)} /></Field>
         <Field label="Parameter">
           <select value={profile.sexParameter} onChange={(event) => updateProfile(account.id, profile.id, { sexParameter: event.target.value as typeof profile.sexParameter })}>
@@ -199,15 +204,16 @@ function ProfileForm() {
         </Field>
       </div>
       <Button onClick={() => {
+        const kg = unit === "lb" ? lbToKg(Number(weightText)) : Number(weightText);
         const result = updateProfile(account.id, profile.id, {
           birthDate: birth,
           heightCm: Number(height),
-          referenceWeightKg: Number(weightKg),
+          referenceWeightKg: kg,
           maintenanceKcal: maintenance.trim() === "" ? null : Number(maintenance),
           energyBasis: profile.energyBasis === "model-estimated" ? "model-estimated" : profile.energyBasis,
         });
         setError(result.ok ? null : result.message);
-        setSaved(result.ok ? `Reference weight ${weightKg} kg saved, with the height and other inputs in this form. Existing scenarios were not rewritten.` : null);
+        setSaved(result.ok ? `Reference weight saved: ${weight(kg, account.preferences)}.` : null);
       }}>Save profile inputs</Button>
       <p className="fine">Affected scenarios: {account.scenarios.filter((item) => item.profileId === profile.id).map((item) => item.name).join(", ") || "none"}.</p>
     </article>
@@ -306,9 +312,11 @@ function exportJson(account: NonNullable<ReturnType<typeof sessionAccount>>) {
 }
 
 function exportCsv(account: NonNullable<ReturnType<typeof sessionAccount>>) {
-  const lines = ["local_date,local_time,timezone,value_kg,source_value,source_unit,source,source_record_id,import_batch_id,note,deleted_at"];
+  const unit = account.preferences.unit;
+  const lines = [`local_date,local_time,timezone,weight_${unit},note,deleted`];
   for (const obs of account.observations) {
-    lines.push([obs.localDate, obs.localTime, obs.timeZone, obs.valueKg, obs.sourceValue, obs.sourceUnit, obs.source, obs.sourceRecordId ?? "", obs.importBatchId ?? "", csvCell(obs.note), obs.deletedAt ?? ""].join(","));
+    const shown = unit === "lb" ? kgToLb(obs.valueKg).toFixed(1) : obs.valueKg.toFixed(1);
+    lines.push([obs.localDate, obs.localTime, obs.timeZone, shown, csvCell(obs.note), obs.deletedAt ? "yes" : "no"].join(","));
   }
   downloadText("trajectory-weigh-ins.csv", lines.join("\n"));
   recordExport(account.id, "csv");

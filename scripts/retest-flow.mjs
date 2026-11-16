@@ -76,7 +76,7 @@ try {
 
   await go("#/progress");
   const opened = await evalValue(`document.querySelector("h1")?.textContent || ""`);
-  check("progress is open", opened.includes("Readings"));
+  check("progress is open", opened.includes("Weigh-ins"));
   check("remove asks before deleting", await clickText("Remove") === "clicked" && (await evalValue("document.body.innerText")).includes("Remove this weigh-in from the chart"));
   check("remove reading is confirmed in the page", await clickText("Remove reading") === "clicked");
   const removed = await evalValue("document.body.innerText");
@@ -137,6 +137,28 @@ try {
   })()`) || "{}");
   check("wide layout centers the column", Math.abs(gaps.left - gaps.right) <= 24 && gaps.width >= 1000 && gaps.width <= 1180);
   console.log(JSON.stringify(gaps));
+
+  await go("#/settings");
+  await delay(300);
+  const switched = await evalValue(`(() => {
+    const field = [...document.querySelectorAll("label, .field")].find((item) => (item.textContent || "").includes("Units"));
+    const select = field?.querySelector("select");
+    if (!select) return "missing";
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set;
+    setter?.call(select, "imperial");
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return select.value;
+  })()`);
+  check("units switch to imperial", switched === "imperial");
+  await delay(300);
+  for (const route of ["#/overview", "#/simulator", "#/progress", "#/compare", "#/settings", "#/report", "#/insights", "#/connections"]) {
+    await go(route);
+    await delay(300);
+    const text = await evalValue("document.body.innerText");
+    const leaked = text.split(/[^A-Za-z]+/).some((word) => word.toLowerCase() === "kg");
+    check(`no kilogram label on ${route}`, !leaked);
+    if (leaked) console.log(text.slice(0, 800));
+  }
   browser.close();
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);

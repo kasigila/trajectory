@@ -11,6 +11,8 @@ export interface ConsentRecord {
 }
 
 export interface Preferences {
+  /** metric stores and shows kilograms. imperial shows pounds. Values in storage stay kilograms. */
+  unitSystem?: "metric" | "imperial";
   unit: "kg" | "lb";
   lengthUnit: "cm" | "ft";
   dateFormat: "iso" | "dmy" | "mdy" | "long";
@@ -49,6 +51,8 @@ export interface Profile extends ProfileInput {
   label: string;
   createdAt: string;
   updatedAt: string;
+  /** Display choice for this profile. Weights stay stored in kilograms. */
+  unitSystem?: "metric" | "imperial";
 }
 
 export interface ForecastRunRecord {

@@ -5,11 +5,12 @@ import { Timeline } from "../components/Timeline";
 import { Button, Disclosure, Field, Notice } from "../components/ui";
 import { PageTitle } from "../components/Shell";
 import { energy, stamp } from "../format";
+import { formatKg, kgToLb, lbToKg } from "../model/units";
 import { addDays, todayIso } from "../model/dates";
 import { activityAdjustmentKcal, resolveDay, resolvePlan, sourceLabel } from "../model/engine";
 import { forecastAsync } from "../model/forecast-async";
-import { explainChange } from "../model/explain";
-import { ACTIVITY_CATEGORIES, CATEGORY_LABEL, LIMITS, MODEL, type ActivityCategory } from "../model/parameters";
+import { explainChange, showStoredWeight } from "../model/explain";
+import { ACTIVITY_CATEGORIES, CATEGORY_LABEL, LIMITS, type ActivityCategory } from "../model/parameters";
 import type { ActivityMode, DayPlanInput, ForecastResult, PhaseRule, ScenarioInputs } from "../model/types";
 import { go } from "../route";
 import {
@@ -61,9 +62,9 @@ export function Simulator() {
   if (!scenario || !version || !inputs) {
     return (
       <section>
-        <PageTitle kicker="Simulator" title="No scenario yet" lede="A scenario is a named plan of intake and activity over dates." />
+        <PageTitle kicker="Plan" title="No plan yet" lede="Write a plan to see a weight on each date." />
         <Button variant="primary" onClick={() => go("onboarding")}>
-          Create a profile scenario
+          Make a plan
         </Button>
       </section>
     );
@@ -86,7 +87,7 @@ export function Simulator() {
       return await work();
     } catch (caught) {
       const id = `err_${crypto.randomUUID().slice(0, 8)}`;
-      setError(`The Hall model did not finish (${id}). The draft is unchanged. ${caught instanceof Error ? caught.message : ""}`);
+      setError(`The forecast did not finish (${id}). The draft is unchanged. ${caught instanceof Error ? caught.message : ""}`);
       return null;
     } finally {
       setRunning(false);
@@ -95,7 +96,7 @@ export function Simulator() {
 
   return (
     <section className="studio">
-      <PageTitle kicker="Simulator" title={scenario.name} lede="Edit a day or a date range, then save a new version. Earlier versions stay as they were." />
+      <PageTitle kicker="Plan" title={scenario.name} lede="Change the plan, then save a version." />
       <div className="toolbar">
         <label>
           Scenario
@@ -155,11 +156,11 @@ export function Simulator() {
           </Button>
         </Notice>
       ) : null}
-      {running ? <p className="status" role="status">Recalculating the Hall model…</p> : null}
+      {running ? <p className="status" role="status">Working…</p> : null}
       {error ? <p className="status error" role="alert">{error}</p> : null}
       {message ? <p className="status" role="status">{message}</p> : null}
       <TrajectoryChart
-        caption={`${scenario.name}, version ${version.versionNumber}. ${MODEL.name} (${MODEL.shortCitation}). Not a clinically validated medical device.`}
+        caption={`${scenario.name}, version ${version.versionNumber}`}
         unit={account.preferences.unit}
         hideAbsolute={account.preferences.hideWeight}
         dateStyle={account.preferences.dateFormat}
@@ -176,17 +177,16 @@ export function Simulator() {
           ...(showOriginal && original.id !== version.id ? [{ id: original.id, label: "Original version", dash: "2 4", points: toChartPoints(original.forecast.points), band: false }] : []),
         ]}
       />
-      <article className="explain">
-        <h2>Why the projection looks like this</h2>
-        <ChangeList change={previewExplain ?? version.change} dateStyle={account.preferences.dateFormat} />
-        <p className="fine">
-          {MODEL.name}. Generated {stamp(version.forecast.completedAt)}. Short hash {version.inputHash.slice(0, 12)}.
-          <button type="button" className="btn quiet" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy full hash</button>
+      <Disclosure title="Why this forecast">
+        <ChangeList change={previewExplain ?? version.change} dateStyle={account.preferences.dateFormat} unit={account.preferences.unit} />
+        <p>
+          Saved {stamp(version.forecast.completedAt)}.
+          <button type="button" className="btn quiet" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy run id</button>
         </p>
         {version.forecast.warnings.map((warning) => (
-          <p key={warning} className="fine">{warning}</p>
+          <p key={warning}>{showStoredWeight(warning, account.preferences.unit)}</p>
         ))}
-      </article>
+      </Disclosure>
       <div className="studio-grid">
         <Timeline
           start={inputs.startDate}
@@ -367,10 +367,10 @@ function DayEditor({
       <p>{rangeLabel}. Shift-click or shift-arrow extends a range. Both ends are included.</p>
       {day ? (
         <>
-          <p className="fine">{`Intake comes from the ${sourceLabel(day.sources.intakeKcal, day).toLowerCase()}. PAL comes from the ${sourceLabel(day.sources.pal, day).toLowerCase()}. Activity mode comes from the ${sourceLabel(day.sources.activityMode, day).toLowerCase()}.`}</p>
-          <p className="fine">
-            Hall activity term at the reference weight: {energy(activityAdjustmentKcal(day, inputs.profile).kcal)}. Step counts are stored and are not converted. Explicit activity energy replaces the PAL term so they are not added twice.
-          </p>
+          <p>{energy(day.intakeKcal)} planned. Activity {energy(activityAdjustmentKcal(day, inputs.profile).kcal)}.</p>
+          <Disclosure title="Where these numbers come from">
+            <p>{`Intake comes from the ${sourceLabel(day.sources.intakeKcal, day).toLowerCase()}. Activity comes from the ${sourceLabel(day.sources.activityMode, day).toLowerCase()}.`}</p>
+          </Disclosure>
           <Field label="Intake, kcal/day" hint="A planned assumption. Food logging is not required.">
             <input value={intake} inputMode="decimal" onChange={(event) => { setIntake(event.target.value); setWriteIntake(true); }} />
           </Field>
@@ -388,10 +388,10 @@ function DayEditor({
               ))}
             </select>
           </Field>
-          <Field label="Physical activity level (PAL)" hint="Hall webappendix equation (8). Blank uses sedentary 1.5 or your reference PAL. This is the activity input the model uses.">
+          <Field label="Activity level" hint="Leave blank to keep the current value. 1.5 is the usual starting point.">
             <input value={pal} inputMode="decimal" onChange={(event) => { setPal(event.target.value); setWriteActivity(true); }} />
           </Field>
-          <Field label="Steps" hint="Stored with the plan. The Hall papers do not give a steps-to-energy coefficient, so steps do not change the curve.">
+          <Field label="Steps" hint="Saved with the plan. Steps do not change the curve.">
             <input value={steps} inputMode="numeric" onChange={(event) => { setSteps(event.target.value); setWriteActivity(true); }} />
           </Field>
           <Field label="Explicit activity energy, kcal/day" hint="Replaces the δ × body-weight term. PAL, steps, and exercise minutes are not added on top.">
@@ -445,7 +445,7 @@ function PhaseEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: (
         <Field label="Intake"><input value={intake} onChange={(event) => setIntake(event.target.value)} /></Field>
         <Field label="Start"><input type="date" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
         <Field label="End"><input type="date" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
-        <Field label="Steps" hint="Stored only. Not used by the Hall equations."><input value={steps} onChange={(event) => setSteps(event.target.value)} /></Field>
+        <Field label="Steps" hint="Saved only. Steps do not change the curve."><input value={steps} onChange={(event) => setSteps(event.target.value)} /></Field>
         <Field label="PAL" hint="Optional. Blank keeps the PAL already on those dates."><input value={pal} onChange={(event) => setPal(event.target.value)} /></Field>
       </div>
       <Button
@@ -479,7 +479,7 @@ function WeekEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: (i
   useEffect(() => setCells(weekCells(inputs)), [signature]);
   return (
     <Disclosure title="Weekday template">
-      <p className="fine">A template fills days that are not covered by a phase or a single-day override. The second box is PAL, the activity input in the Hall model. Blank leaves that field alone. Steps are not an energy input. Nothing is written until you apply it.</p>
+      <p>This fills empty days. Blank leaves a field alone. Nothing is written until you apply it.</p>
       <label className="check">
         <input type="checkbox" checked={inputs.weekly.enabled} onChange={(event) => onInputs({ ...inputs, weekly: { ...inputs.weekly, enabled: event.target.checked } })} />
         Use weekday template
@@ -585,33 +585,36 @@ function CopyEditor({ inputs, selection, onInputs }: { inputs: ScenarioInputs; s
 }
 
 function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: (inputs: ScenarioInputs) => void }) {
+  const { account } = useSession();
+  const unit = account?.preferences.unit ?? "kg";
   const [label, setLabel] = useState("Marker");
   const [date, setDate] = useState(inputs.startDate);
-  const [goal, setGoal] = useState(inputs.goal?.weightKg?.toString() ?? "");
+  const [goal, setGoal] = useState(inputs.goal?.weightKg == null ? "" : (unit === "lb" ? kgToLb(inputs.goal.weightKg) : inputs.goal.weightKg).toFixed(1));
   const [goalDate, setGoalDate] = useState(inputs.goal?.date ?? "");
   const [status, setStatus] = useState<string | null>(null);
   return (
     <Disclosure title="Chart marker and notes">
-      <p className="fine">A chart marker is an annotation on the drawing. It is not the reference weight the Hall model starts from, and the app will not build a plan to reach it.</p>
-      <Field label="Chart marker, kg">
+      <p>A marker is a mark on the chart. It does not change the starting weight.</p>
+      <Field label={`Chart marker, ${unit}`}>
         <input value={goal} onChange={(event) => { setGoal(event.target.value); setStatus(null); }} />
       </Field>
-      <Field label="Target date" hint="Optional. Year-month-day. A mark on the chart, not a date the model is fitted to.">
+      <Field label="Target date">
         <input type="date" value={goalDate} onChange={(event) => { setGoalDate(event.target.value); setStatus(null); }} />
       </Field>
       {status ? <p role="status">{status}</p> : null}
       <Button
         onClick={() => {
-          const weightKg = goal.trim() === "" ? null : Number(goal);
+          const typed = goal.trim() === "" ? null : Number(goal);
+          const weightKg = typed == null ? null : unit === "lb" ? lbToKg(typed) : typed;
           if (weightKg != null && (!Number.isFinite(weightKg) || weightKg < LIMITS.weightKg[0] || weightKg > LIMITS.weightKg[1])) {
-            setStatus(`A chart marker must be between ${LIMITS.weightKg[0]} and ${LIMITS.weightKg[1]} kg, or blank to remove it. Nothing was saved.`);
+            setStatus(`A chart marker must be between ${formatKg(LIMITS.weightKg[0], unit)} and ${formatKg(LIMITS.weightKg[1], unit)}, or blank to remove it. Nothing was saved.`);
             return;
           }
           onInputs({ ...inputs, goal: weightKg == null ? null : { weightKg, date: goalDate || null, label: "Chart marker" } });
-          setStatus(weightKg == null ? "Chart marker removed from the draft." : `Chart marker ${weightKg} kg${goalDate ? ` on ${goalDate}` : ""} saved on the draft. It does not change the reference weight.`);
+          setStatus(weightKg == null ? "Chart marker removed from the draft." : `Chart marker ${formatKg(weightKg, unit)} saved on the draft.`);
         }}
       >
-        Save chart marker on draft
+        Save chart marker
       </Button>
       <ul className="plain">
         {inputs.milestones.map((mark) => (

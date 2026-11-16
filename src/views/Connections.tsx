@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PageTitle } from "../components/Shell";
-import { Button, Dialog } from "../components/ui";
+import { Button, Dialog, Disclosure } from "../components/ui";
 import { setConnection, setOptionalConsent, useSession } from "../state/store";
 import type { ConnectionRecord } from "../state/types";
 
@@ -10,10 +10,10 @@ export function Connections() {
   if (!account) return null;
   return (
     <section>
-      <PageTitle kicker="Connections" title="Health platforms" lede="This browser cannot read Apple Health or Health Connect. Nothing below is a successful sync." />
+      <PageTitle kicker="Connections" title="Health apps" lede="Not available in this browser." />
       <ConnectionCard
         title="Apple Health"
-        body="A native iOS app could later request read access to weight and activity. Write access is not part of a first integration. This page does not open a Health permission dialog and does not import data."
+        body="A phone app could ask to read weight later. This page does not."
         record={account.connections.appleHealth}
         onAttempt={() => setOpen("appleHealth")}
         onRevoke={() => {
@@ -24,7 +24,7 @@ export function Connections() {
       />
       <ConnectionCard
         title="Health Connect"
-        body="A native Android app could later request read access to weight, steps, and activity, one type at a time. This browser build cannot. Permission changes and deleted records are not applicable until a native app exists."
+        body="A phone app could ask to read weight later. This page does not."
         record={account.connections.healthConnect}
         onAttempt={() => setOpen("healthConnect")}
         onRevoke={() => {
@@ -46,7 +46,7 @@ export function Connections() {
         </Button>
         <Button onClick={() => setOpen(null)}>Close</Button>
       </Dialog>
-      <p className="fine">CSV import on the Progress page is the way to bring in readings here. It is separate from these platforms.</p>
+      <p>To add old readings, use Import a spreadsheet on Track.</p>
     </section>
   );
 }
@@ -57,19 +57,12 @@ function ConnectionCard({ title, body, record, onAttempt, onRevoke, onClear }: {
     <article className="card">
       <h2>{title}</h2>
       <p className="figure">{status}</p>
-      <p>{body}</p>
-      <ul>
-        <li>Read weight: not requested</li>
-        <li>Read activity: not requested</li>
-        <li>Write: not requested</li>
-        <li>Last sync: never</li>
-      </ul>
-      <p className="fine">{record.note}</p>
       <div className="toolbar">
-        <Button onClick={onAttempt}>Review connection</Button>
+        <Button variant="primary" onClick={onAttempt}>Review connection</Button>
         <Button onClick={onRevoke}>I do not consent to health-platform sync</Button>
         {record.status === "revoked" ? <Button onClick={onClear}>Clear the refusal</Button> : null}
       </div>
+      <Disclosure title="Details"><p>{body}</p><p>{record.note}</p><p>Read weight, read activity, and write are not requested. Last sync: never.</p></Disclosure>
     </article>
   );
 }

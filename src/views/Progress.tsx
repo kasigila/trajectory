@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { TrajectoryChart } from "../components/Chart";
 import { PageTitle } from "../components/Shell";
-import { Button, Field, Notice } from "../components/ui";
+import { Button, Disclosure, Field, Notice } from "../components/ui";
 import { energy, stamp, weight, when } from "../format";
+import { formatKg } from "../model/units";
 import { parseCsv, parseLooseDate, parseNumber, type DateOrder } from "../model/csv";
 import { importStatus } from "../model/import-status";
 import { todayIso } from "../model/dates";
@@ -11,11 +12,14 @@ import { TREND_DESCRIPTION, smoothObservations } from "../model/trend";
 import { kgToLb, lbToKg, round1 } from "../model/units";
 import { addComposition, addObservation, addOtherMeasurement, commitImport, deleteObservation, restoreObservation, setReadingCalibration, updateObservation, updatePreferences, useSession } from "../state/store";
 
-const SAMPLE = `date,weight,unit,note
-2026-09-15,86.6,kg,home scale
-2026-09-22,86.4,kg,home scale
-2026-09-22,86.5,kg,second reading same morning
+function sampleCsv(unit: "kg" | "lb") {
+  const shown = (kg: number) => (unit === "lb" ? kgToLb(kg) : kg).toFixed(1);
+  return `date,weight,unit,note
+2026-09-15,${shown(86.6)},${unit},home scale
+2026-09-22,${shown(86.4)},${unit},home scale
+2026-09-22,${shown(86.5)},${unit},second reading same morning
 `;
+}
 
 export function Progress() {
   const { account, profile } = useSession();
@@ -32,7 +36,7 @@ export function Progress() {
   const today = todayIso(account.preferences.timeZone);
   return (
     <section>
-      <PageTitle kicker="Progress" title="Readings and the original forecast" lede="Scale readings stay measurements. The line is the first saved run of the chosen scenario, not a refit." />
+      <PageTitle kicker="Track" title="Weigh-ins" lede="Your readings next to the first saved forecast." />
       {account.preferences.pauseTracking ? <Notice>Tracking is paused. History is kept. Nothing is requested of you. Resume in Settings when you want.</Notice> : null}
       <label>
         Original forecast
@@ -49,10 +53,10 @@ export function Progress() {
           today={today}
           observations={active.map((obs) => ({ id: obs.id, date: obs.localDate, kg: obs.valueKg, source: obs.source }))}
           trend={trend}
-          series={[{ id: original.id, label: "Original Hall forecast", band: true, dash: "2 3", points: original.forecast.points.map((point) => ({ date: point.date, kg: point.centralKg, lower: point.lowerKg, upper: point.upperKg })) }]}
+          series={[{ id: original.id, label: "Original forecast", band: true, dash: "2 3", points: original.forecast.points.map((point) => ({ date: point.date, kg: point.centralKg, lower: point.lowerKg, upper: point.upperKg })) }]}
         />
       ) : <p>No saved forecast yet.</p>}
-      <p className="fine">{TREND_DESCRIPTION}</p>
+      <Disclosure title="About the trend line"><p>{TREND_DESCRIPTION}</p></Disclosure>
       {message ? <p role="status">{message}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       <WeighInForm paused={account.preferences.pauseTracking} onSave={(value, unit, date, time, note, exclude) => {
@@ -77,7 +81,7 @@ export function Progress() {
           return false;
         }
         setError(null);
-        setMessage(result.warning ?? `Weigh-in ${value} ${unit} saved for ${date}. The forecast and the plan were not changed.`);
+        setMessage(result.warning ?? `Weigh-in ${formatKg(kg, account.preferences.unit)} saved for ${date}. The forecast was not changed.`);
         return true;
       }} />
       <h2>History</h2>
@@ -110,6 +114,7 @@ export function Progress() {
           ))}
         </ul>
       </details>
+      <Disclosure title="Import a spreadsheet">
       <CsvImport paused={account.preferences.pauseTracking} timeZone={account.preferences.timeZone} referenceKg={profile.referenceWeightKg} existing={active.map((obs) => ({ date: obs.localDate, kg: obs.valueKg }))} onCommit={async (rows, text) => {
         const result = await commitImport(account.id, { profileId: profile.id, timeZone: account.preferences.timeZone, sourceLabel: "csv", fileText: text, rows });
         if (!result.ok) {
@@ -120,8 +125,9 @@ export function Progress() {
         setMessage(result.warning ?? "Import finished.");
         return true;
       }} />
-      <OtherLogs />
-      <p className="fine">Software store range for a reading: {LIMITS.weightKg[0]}–{LIMITS.weightKg[1]} kg. Values outside it are refused and not clamped. This is not a clinical limit.</p>
+      </Disclosure>
+      <Disclosure title="Other measurements"><OtherLogs /></Disclosure>
+      <p className="fine">This app stores readings from {formatKg(LIMITS.weightKg[0], account.preferences.unit)} to {formatKg(LIMITS.weightKg[1], account.preferences.unit)}. A value outside that is not saved. This is a software limit, not a clinical one.</p>
       <button type="button" className="btn quiet" onClick={() => updatePreferences(account.id, { hideWeight: !account.preferences.hideWeight })}>
         {account.preferences.hideWeight ? "Show weight numbers" : "Hide weight numbers"}
       </button>
@@ -130,8 +136,9 @@ export function Progress() {
 }
 
 function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: number, unit: "kg" | "lb", date: string, time: string, note: string, exclude: boolean) => boolean }) {
+  const { account } = useSession();
+  const unit = account?.preferences.unit ?? "kg";
   const [value, setValue] = useState("");
-  const [unit, setUnit] = useState<"kg" | "lb">("kg");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("07:00");
   const [note, setNote] = useState("");
@@ -148,8 +155,7 @@ function WeighInForm({ paused, onSave }: { paused: boolean; onSave: (value: numb
     }}>
       <h2>Add a weigh-in</h2>
       <div className="grid-2">
-        <Field label="Value"><input required value={value} onChange={(event) => setValue(event.target.value)} /></Field>
-        <Field label="Unit"><select value={unit} onChange={(event) => setUnit(event.target.value as "kg" | "lb")}><option value="kg">kg</option><option value="lb">lb</option></select></Field>
+        <Field label={`Weight, ${unit}`}><input required inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)} /></Field>
         <Field label="Date" hint="Use the calendar. The stored date is year-month-day."><input required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
         <Field label="Time"><input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></Field>
       </div>
@@ -198,7 +204,8 @@ function CsvImport({ paused, existing, referenceKg, onCommit }: { paused: boolea
   const [weightCol, setWeightCol] = useState(1);
   const [unitCol, setUnitCol] = useState(2);
   const [noteCol, setNoteCol] = useState(3);
-  const [fallback, setFallback] = useState<"kg" | "lb">("kg");
+  const { account } = useSession();
+  const fallback = account?.preferences.unit ?? "kg";
   const [picked, setPicked] = useState<Record<number, boolean>>({});
   const table = useMemo(() => parseCsv(text), [text]);
   if (paused) return <p>CSV import is off while tracking is paused.</p>;
@@ -223,12 +230,12 @@ function CsvImport({ paused, existing, referenceKg, onCommit }: { paused: boolea
         const file = event.target.files?.[0];
         if (file) setText(await file.text());
       }} />
-      <Button onClick={() => setText(SAMPLE)}>Load sample CSV</Button>
+      <Button onClick={() => setText(sampleCsv(fallback))}>Load sample CSV</Button>
       {table.headers.length ? (
         <>
           <div className="grid-2">
             <Field label="Date order"><select value={order} onChange={(event) => setOrder(event.target.value as DateOrder)}><option value="ymd">Year-month-day</option><option value="mdy">Month/day/year</option><option value="dmy">Day/month/year</option></select></Field>
-            <Field label="If unit column is empty"><select value={fallback} onChange={(event) => setFallback(event.target.value as "kg" | "lb")}><option value="kg">kg</option><option value="lb">lb</option></select></Field>
+            <p>If a row has no unit, it is read as {fallback}.</p>
             <Map label="Date column" headers={table.headers} value={dateCol} onChange={setDateCol} />
             <Map label="Weight column" headers={table.headers} value={weightCol} onChange={setWeightCol} />
             <Map label="Unit column" headers={table.headers} value={unitCol} onChange={setUnitCol} />
@@ -282,7 +289,7 @@ function OtherLogs() {
       <p>Waist and body composition are optional records. They are not inputs to the weight model.</p>
       {note ? <p role="status">{note}</p> : null}
       <Field label="Date" hint="Use the calendar. The stored date is year-month-day."><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
-      <Field label="Waist, cm" hint={`Stored between ${LIMITS.waistCm[0]} and ${LIMITS.waistCm[1]} cm. Not a clinical range, and not used by the Hall model.`}><input value={waist} onChange={(event) => setWaist(event.target.value)} /></Field>
+      <Field label="Waist, cm" hint={`Stored between ${LIMITS.waistCm[0]} and ${LIMITS.waistCm[1]} cm. Not used by the forecast.`}><input value={waist} onChange={(event) => setWaist(event.target.value)} /></Field>
       <Button onClick={() => {
         const result = addOtherMeasurement(account.id, { profileId: profile.id, date, kind: "waist", label: "Waist", valueCm: Number(waist), note: "" });
         setNote(result.ok ? "Waist saved. It is not used by the forecast." : result.message);
@@ -291,7 +298,7 @@ function OtherLogs() {
       <Field label="Body fat, percent" hint={`Stored between ${LIMITS.bodyFatPct[0]} and ${LIMITS.bodyFatPct[1]} percent, or leave blank.`}><input value={fat} onChange={(event) => setFat(event.target.value)} /></Field>
       <Button onClick={() => {
         const result = addComposition(account.id, { profileId: profile.id, date, bodyFatPct: fat ? Number(fat) : null, leanMassKg: null, source: "manual", method: "unspecified", note: "Consumer estimates vary." });
-        setNote(result.ok ? "Body fat saved. The Hall forecast was not changed." : result.message);
+        setNote(result.ok ? "Body fat saved. The forecast was not changed." : result.message);
         if (result.ok) setFat("");
       }}>Save composition</Button>
       <ul>

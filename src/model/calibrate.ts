@@ -78,7 +78,7 @@ export function proposeCalibration(inputs: ScenarioInputs, observations: Observa
     meanIntakeKcal: meanIntake,
     trendChangeKg: trendChange,
     proposedMaintenanceKcal: implied,
-    reason: `This is a separate retrospective sketch. It uses the plan’s assumed intake and the change in the smoothed trend, with the Hall webappendix equation (12) energy density at the initial fat mass (${Math.round(density)} kcal/kg). It is not a re-integration of the forward model and it is not a measurement of expenditure. Accepting it only updates the baseline expenditure on a new scenario version. Planned intake and activity stay as they are unless you edit them.`,
+    reason: "This sketch suggests a new baseline. Accepting it saves that baseline on a new version. The plan stays as it is until you edit it.",
   };
 }
 

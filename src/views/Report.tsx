@@ -8,7 +8,7 @@ import { addDays, todayIso } from "../model/dates";
 import { maintenanceBasis } from "../model/engine";
 import { MODEL } from "../model/parameters";
 import { useSession } from "../state/store";
-import { Button } from "../components/ui";
+import { Button, Disclosure } from "../components/ui";
 
 export function Report() {
   const { account, profile } = useSession();
@@ -18,20 +18,11 @@ export function Report() {
   const today = todayIso(account.preferences.timeZone);
   return (
     <section className="report-sheet">
-      <PageTitle kicker="Private report" title={scenario?.name ?? "No scenario"} lede="Print this page, or choose Save as PDF in the print dialog. The file stays on your device." />
+      <PageTitle kicker="Report" title={scenario?.name ?? "No plan yet"} lede="Print this page, or save it as a PDF. It stays on this device." />
       <Button className="no-print" variant="primary" onClick={() => window.print()}>Print or save as PDF</Button>
-      <p>Profile {profile.label}. Generated {stamp(new Date().toISOString())} for local dates in {account.preferences.timeZone}.</p>
       {version && scenario ? (
         <>
-          <p>Version {version.versionNumber}. {MODEL.name} ({MODEL.shortCitation}). Not a clinically validated medical device. Saved {stamp(version.forecast.completedAt)}.</p>
-          <details className="technical">
-            <summary>Technical details</summary>
-            <p>The short hash identifies this exact saved plan. Copy it if you want to compare two files later. It is not a medical identifier.</p>
-            <p className="mono">Hash {version.inputHash.slice(0, 12)} <button type="button" className="btn quiet no-print" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy full hash</button></p>
-            <p>Hall model, Lancet 2011. App version {MODEL.engineBuild}.</p>
-            <p className="fine">Stored ids: {MODEL.id} · {MODEL.version} · {MODEL.engineBuild}. This run keeps the model version it was saved with.</p>
-          </details>
-          <p>Horizon {when(version.inputSnapshot.startDate, account.preferences)} through {when(addDays(version.inputSnapshot.startDate, version.inputSnapshot.horizonDays - 1), account.preferences)}, both dates included. Maintenance basis {energy(maintenanceBasis(version.inputSnapshot.profile) ?? NaN)}.</p>
+          <p>Version {version.versionNumber}, saved {stamp(version.forecast.completedAt)}.</p>
           <TrajectoryChart
             caption="Report chart"
             unit={account.preferences.unit}
@@ -44,16 +35,20 @@ export function Report() {
             series={[{ id: version.id, label: scenario.name, band: true, points: version.forecast.points.map((point) => ({ date: point.date, kg: point.centralKg, lower: point.lowerKg, upper: point.upperKg })) }]}
             observations={account.observations.filter((obs) => obs.profileId === profile.id && !obs.deletedAt).map((obs) => ({ id: obs.id, date: obs.localDate, kg: obs.valueKg, source: obs.source }))}
           />
-          <h2>Why this version differs from its parent</h2>
-          <ChangeList change={version.change} dateStyle={account.preferences.dateFormat} />
-          <h2>Assumptions</h2>
-          <ul>{(account.featureFlags.advancedMath ? version.assumptions : version.assumptions.slice(0, 6)).map((line) => <li key={line}>{line}</li>)}</ul>
-          <p>Reference weight {weight(version.inputSnapshot.profile.referenceWeightKg, account.preferences)} on {when(version.inputSnapshot.profile.referenceDate, account.preferences)}. Height {version.inputSnapshot.profile.heightCm} cm is used in the Jackson equation and in Mifflin–St Jeor.</p>
+          <p>Starting weight {weight(version.inputSnapshot.profile.referenceWeightKg, account.preferences)} on {when(version.inputSnapshot.profile.referenceDate, account.preferences)}. {version.inputSnapshot.goal?.weightKg != null ? crossingCopy(version.forecast.points, version.inputSnapshot.goal.weightKg, (iso) => when(iso, account.preferences)) : "No chart marker on this plan."}</p>
+          <Disclosure title="Why this version">
+            <ChangeList change={version.change} dateStyle={account.preferences.dateFormat} unit={account.preferences.unit} />
+          </Disclosure>
+          <Disclosure title="About the model">
+            <p>Horizon {when(version.inputSnapshot.startDate, account.preferences)} through {when(addDays(version.inputSnapshot.startDate, version.inputSnapshot.horizonDays - 1), account.preferences)}. Maintenance {energy(maintenanceBasis(version.inputSnapshot.profile) ?? NaN)}.</p>
+            <p>Run id {version.inputHash.slice(0, 12)}. <button type="button" className="btn quiet no-print" onClick={() => void navigator.clipboard.writeText(version.inputHash)}>Copy run id</button></p>
+            <p>{MODEL.name}. {MODEL.shortCitation}. App version {MODEL.engineBuild}.</p>
+            <ul>{version.assumptions.map((line) => <li key={line}>{line}</li>)}</ul>
+            <p>{DISCLAIMER}</p>
+          </Disclosure>
         </>
-      ) : <p>Save a scenario before printing a report.</p>}
-      <h2>Limits</h2>
-      <p>{DISCLAIMER}</p>
-      <p>The shaded area is a sensitivity range, not a confidence interval. {version?.inputSnapshot.goal?.weightKg != null ? crossingCopy(version.forecast.points, version.inputSnapshot.goal.weightKg, (iso) => when(iso, account.preferences)) : "No chart marker is saved on this version."} The plan is not changed by this report.</p>
+      ) : <p>Save a plan before printing a report.</p>}
+      <p>The shaded area is a sensitivity range, not a promise of a scale reading.</p>
     </section>
   );
 }

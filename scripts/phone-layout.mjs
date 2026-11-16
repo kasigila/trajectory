@@ -93,7 +93,7 @@ try {
     ["bottom navigation is shown", value?.bottomDisplay === "flex"],
     ["navigation has an icon", value?.hasIcon === true],
     ["page does not scroll sideways", value && value.scrollWidth <= value.clientWidth + 1],
-    ["weight chart is on screen", value && value.plotHeight >= 400 && value.chartBeforeTitle],
+    ["weight chart is on screen", value && value.plotHeight >= 400 && /\d/.test(String(value.title || ""))],
     ["notes copy is offered", value?.hasCopy === true],
   ];
   for (const [name, ok] of checks) {

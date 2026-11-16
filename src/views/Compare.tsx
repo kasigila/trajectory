@@ -7,7 +7,7 @@ import { todayIso } from "../model/dates";
 import { maintenanceBasis } from "../model/engine";
 import { pickInspectDate } from "../model/inspect-date";
 import { MODEL } from "../model/parameters";
-import { round1 } from "../model/units";
+import { kgToLb, round1 } from "../model/units";
 import { duplicateScenario, useSession } from "../state/store";
 import type { Scenario, ScenarioVersion } from "../state/types";
 
@@ -26,7 +26,7 @@ export function Compare() {
   const focus = date || pickInspectDate(versions.map((version) => version.forecast.points.map((point) => point.date)), today);
   return (
     <section>
-      <PageTitle kicker="Compare" title="Plans side by side" lede="Differences are between Hall model runs. They are not guaranteed outcomes." />
+      <PageTitle kicker="Compare" title="Plans side by side" lede="The gap is between two saved plans." />
       <div className="toolbar">
         {[0, 1, 2].map((slot) => (
           <label key={slot}>
@@ -88,7 +88,7 @@ export function Compare() {
           </thead>
           <tbody>
             <tr><th>Version</th>{versions.map((version) => <td key={version.id}>{version.versionNumber}</td>)}</tr>
-            <tr><th>Model</th>{versions.map((version) => <td key={version.id}>{version.modelId === MODEL.id ? `Hall model, Lancet 2011` : `${version.modelId} ${version.modelVersion}`}</td>)}</tr>
+            <tr><th>Model</th>{versions.map((version) => <td key={version.id}>{version.modelId === MODEL.id ? "Same forecast model" : version.modelVersion}</td>)}</tr>
             <tr><th>Generated</th>{versions.map((version) => <td key={version.id}>{stamp(version.forecast.completedAt)}</td>)}</tr>
             <tr><th>Start</th>{versions.map((version) => <td key={version.id}>{when(version.inputSnapshot.startDate, account.preferences)}</td>)}</tr>
             <tr><th>Horizon</th>{versions.map((version) => <td key={version.id}>{version.inputSnapshot.horizonDays} inclusive days</td>)}</tr>
@@ -139,7 +139,7 @@ function Delta({ versions, names, iso, label, unit, hide }: { versions: Scenario
   const b = versions[1].forecast.points.find((point) => point.date === iso);
   if (!a || !b) return <p>That date is not on both runs. The chart stays aligned to the calendar.</p>;
   const delta = a.centralKg - b.centralKg;
-  const shown = hide ? "a hidden absolute difference" : `${round1(Math.abs(unit === "lb" ? delta * 2.2046226218 : delta)).toFixed(1)} ${unit}`;
+  const shown = hide ? "a hidden absolute difference" : `${round1(Math.abs(unit === "lb" ? kgToLb(delta) : delta)).toFixed(1)} ${unit}`;
   return <p>On {label}, {names[0]} minus {names[1]} is {shown} on the central estimates. This is a modelled difference, not a guaranteed outcome.</p>;
 }
 

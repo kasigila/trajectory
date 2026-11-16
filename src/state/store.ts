@@ -5,7 +5,7 @@ import { sha256 } from "../model/hash";
 import { bodyFatBoundMessage, horizonBoundMessage, leanBoundMessage, waistBoundMessage, weightBoundMessage } from "../model/bounds";
 import { LIMITS, MODEL } from "../model/parameters";
 import type { DayPlanInput, ProfileInput, ScenarioInputs } from "../model/types";
-import { ftInToCm, kgToLb, lbToKg } from "../model/units";
+import { ftInToCm, formatKg, kgToLb, lbToKg, unitSystemPatch, type UnitSystem } from "../model/units";
 import { blankOnboarding, createDemoAccount, createSeedDatabase, defaultConnections, defaultNotifications, defaultPreferences } from "./seed";
 import type {
   Account,
@@ -393,6 +393,7 @@ export async function finishOnboarding(draft: OnboardingDraft, passphrase: strin
   if (!account) return fail("Open a local session before adding a profile.");
   account = {
     ...account,
+    preferences: { ...account.preferences, ...unitSystemPatch(draft.unit === "lb" ? "imperial" : "metric") },
     profiles: [...account.profiles, profile],
     activeProfileId: profile.id,
   };
@@ -457,7 +458,8 @@ function profileFromDraft(draft: OnboardingDraft): { ok: true; profile: Profile;
   if (!Number.isFinite(horizon)) return fail("Horizon needs a whole number of days.");
   if (!Number.isFinite(intake)) return fail("Enter a baseline intake. It was not filled in for you.");
   const bodyFat = draft.bodyFatPct.trim() === "" ? null : Number(draft.bodyFatPct);
-  const lean = draft.leanMassKg.trim() === "" ? null : Number(draft.leanMassKg);
+  const leanRaw = draft.leanMassKg.trim() === "" ? null : Number(draft.leanMassKg);
+  const lean = leanRaw == null ? null : draft.unit === "lb" ? lbToKg(leanRaw) : leanRaw;
   if (bodyFat != null) {
     const fatProblem = bodyFatBoundMessage(bodyFat);
     if (fatProblem) return fail(fatProblem);
@@ -494,6 +496,7 @@ function profileFromDraft(draft: OnboardingDraft): { ok: true; profile: Profile;
     referenceActivity: { category: draft.activityCategory, steps, pal: Number.isFinite(pal) ? pal : 1.5 },
     excludedContext: draft.excludedContext,
     excludedDetail: "",
+    unitSystem: draft.unit === "lb" ? "imperial" : "metric",
   };
   const baseline: DayPlanInput = {
     intakeKcal: intake,
@@ -530,6 +533,15 @@ export function updatePreferences(accountId: string, patch: Partial<Preferences>
   mapAccount(accountId, (account) => ({ ...account, preferences: { ...account.preferences, ...patch } }));
 }
 
+export function setUnitSystem(accountId: string, system: UnitSystem) {
+  const patch = unitSystemPatch(system);
+  mapAccount(accountId, (account) => ({
+    ...account,
+    preferences: { ...account.preferences, ...patch },
+    profiles: account.profiles.map((profile) => (profile.id === account.activeProfileId ? { ...profile, unitSystem: system } : profile)),
+  }));
+}
+
 export function updateProfile(accountId: string, profileId: string, patch: Partial<Profile>): ActionResult {
   const account = accountById(accountId);
   const current = account?.profiles.find((profile) => profile.id === profileId);
@@ -543,7 +555,7 @@ export function updateProfile(accountId: string, profileId: string, patch: Parti
     return fail(`Height must stay between ${LIMITS.heightCm[0]} and ${LIMITS.heightCm[1]} cm to be stored. The previous value is unchanged.`);
   }
   if (next.referenceWeightKg < LIMITS.weightKg[0] || next.referenceWeightKg > LIMITS.weightKg[1]) {
-    return fail(`Reference weight must stay between ${LIMITS.weightKg[0]} and ${LIMITS.weightKg[1]} kg to be stored. The previous value is unchanged.`);
+    return fail(`Reference weight must stay between ${formatKg(LIMITS.weightKg[0], account.preferences.unit)} and ${formatKg(LIMITS.weightKg[1], account.preferences.unit)}. The previous value is unchanged.`);
   }
   mapAccount(accountId, (item) =>
     audit(
@@ -557,7 +569,11 @@ export function updateProfile(accountId: string, profileId: string, patch: Parti
 }
 
 export function setActiveProfile(accountId: string, profileId: string) {
-  mapAccount(accountId, (account) => ({ ...account, activeProfileId: profileId }));
+  mapAccount(accountId, (account) => {
+    const profile = account.profiles.find((item) => item.id === profileId);
+    const prefs = profile?.unitSystem ? { ...account.preferences, ...unitSystemPatch(profile.unitSystem) } : account.preferences;
+    return { ...account, activeProfileId: profileId, preferences: prefs };
+  });
 }
 
 export function deleteProfile(accountId: string, profileId: string): ActionResult {
@@ -853,19 +869,19 @@ export function declineCalibration(accountId: string, scenarioId: string) {
   mapAccount(accountId, (account) => audit(account, "calibration.decline", scenarioId));
 }
 
-function weightError(kg: number): string | null {
+function weightError(kg: number, unit: "kg" | "lb"): string | null {
   if (!Number.isFinite(kg)) return "Enter a numeric weight. It was not changed.";
   if (kg < LIMITS.weightKg[0] || kg > LIMITS.weightKg[1]) {
-    return `This build stores weights between ${LIMITS.weightKg[0]} and ${LIMITS.weightKg[1]} kg. The reading was not clamped or saved.`;
+    return `This build stores weights between ${formatKg(LIMITS.weightKg[0], unit)} and ${formatKg(LIMITS.weightKg[1], unit)}. The reading was not clamped or saved.`;
   }
   return null;
 }
 
 export function addObservation(accountId: string, input: Omit<WeightObservation, "id" | "createdAt" | "deletedAt" | "corrections" | "syncStatus" | "valueKg"> & { valueKg: number }): ActionResult {
-  const problem = weightError(input.valueKg);
+  const account = accountById(accountId);
+  const problem = weightError(input.valueKg, account?.preferences.unit ?? "kg");
   if (problem) return fail(problem);
   if (!isIsoDate(input.localDate)) return fail("Enter a valid date for the reading.");
-  const account = accountById(accountId);
   const duplicate = account?.observations.some((obs) => obs.profileId === input.profileId && !obs.deletedAt && obs.localDate === input.localDate);
   const observation: WeightObservation = {
     ...input,
@@ -881,9 +897,9 @@ export function addObservation(accountId: string, input: Omit<WeightObservation,
 }
 
 export function updateObservation(accountId: string, observationId: string, valueKg: number, note: string): ActionResult {
-  const problem = weightError(valueKg);
-  if (problem) return fail(problem);
   const account = accountById(accountId);
+  const problem = weightError(valueKg, account?.preferences.unit ?? "kg");
+  if (problem) return fail(problem);
   const current = account?.observations.find((obs) => obs.id === observationId);
   if (!current || current.deletedAt) return fail("That reading is not active.");
   mapAccount(accountId, (item) =>
@@ -954,7 +970,7 @@ export async function commitImport(accountId: string, args: {
       return;
     }
     const valueKg = row.unit === "lb" ? lbToKg(row.value) : row.value;
-    if (weightError(valueKg)) {
+    if (weightError(valueKg, account.preferences.unit)) {
       errors.push(`Row ${index + 1}: weight`);
       return;
     }

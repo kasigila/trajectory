@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { DISCLAIMER } from "../copy";
 import { Notice } from "./ui";
 import { Icon, type IconName } from "./icons";
 import { Logo } from "./Logo";
@@ -10,17 +9,17 @@ import type { Route } from "../route";
 import { dismissReminder, setActiveProfile, signOut, useSession } from "../state/store";
 
 const PRIMARY: Array<{ id: Route; label: string; icon: IconName }> = [
-  { id: "overview", label: "Overview", icon: "overview" },
-  { id: "simulator", label: "Simulator", icon: "simulator" },
+  { id: "overview", label: "Home", icon: "overview" },
+  { id: "simulator", label: "Plan", icon: "simulator" },
+  { id: "progress", label: "Track", icon: "progress" },
   { id: "compare", label: "Compare", icon: "compare" },
-  { id: "progress", label: "Progress", icon: "progress" },
-  { id: "insights", label: "Insights", icon: "insights" },
 ];
 
 const MORE: Array<{ id: Route; label: string; icon: IconName }> = [
-  { id: "connections", label: "Connections", icon: "connections" },
-  { id: "settings", label: "Settings", icon: "settings" },
   { id: "report", label: "Report", icon: "report" },
+  { id: "insights", label: "Learn", icon: "insights" },
+  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "connections", label: "Connections", icon: "connections" },
 ];
 
 export function Shell({ route, children }: { route: Route; children: ReactNode }) {
@@ -82,7 +81,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
         {account.isDemo ? <Notice>Sample data, not your measurements. This opens on {profile.label}. Use New profile to enter your own. Numbers stay in this browser.</Notice> : null}
         <Reminders />
         <main id="content">{children}</main>
-        <footer className="legal">{DISCLAIMER}</footer>
+        <footer className="legal">Not a medical device. The chart is an estimate, not a scale reading. <a href="#/insights">About the model</a></footer>
       </div>
       <nav className="bottom-nav" aria-label="Mobile">
         {PRIMARY.slice(0, 4).map((item) => (
@@ -102,9 +101,6 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
                 {item.label}
               </a>
             ))}
-            <a href="#/insights" onClick={() => setMore(false)}>
-              Insights
-            </a>
           </div>
         ) : null}
       </nav>
@@ -183,14 +179,14 @@ function phaseDue(account: NonNullable<ReturnType<typeof useSession>["account"]>
 }
 
 const TITLE_ICON: Partial<Record<string, IconName>> = {
-  Trajectory: "overview",
-  Simulator: "simulator",
+  Home: "overview",
+  Plan: "simulator",
   Compare: "compare",
-  Progress: "progress",
-  Insights: "insights",
+  Track: "progress",
+  Learn: "insights",
   Connections: "connections",
   Settings: "settings",
-  "Private report": "report",
+  Report: "report",
 };
 
 export function PageTitle({ kicker, title, lede, compact }: { kicker: string; title: string; lede?: string; compact?: boolean }) {

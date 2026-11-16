@@ -1,6 +1,6 @@
 import { addDays, diffDays, formatDate } from "./dates";
 import { activityAdjustmentKcal, resolvePlan } from "./engine";
-import { formatKcal, round1 } from "./units";
+import { formatKcal, formatKg, round1 } from "./units";
 import type { ForecastPoint, PlanDiffSpan, ScenarioInputs } from "./types";
 
 export interface ChangeExplanation {
@@ -119,7 +119,7 @@ export function explainChange(before: ScenarioInputs | null, beforePoints: Forec
   return { narrative: narrative + profileNote, firstDivergence, prefixUnchanged, endDeltaKg, spans };
 }
 
-export function changeLines(change: ChangeExplanation, style: "iso" | "dmy" | "mdy" | "long"): string[] {
+export function changeLines(change: ChangeExplanation, style: "iso" | "dmy" | "mdy" | "long", unit: "kg" | "lb" = "kg"): string[] {
   const spanLines = [...(change.spans ?? [])].reverse().map((span) => {
     const when = span.start === span.end ? formatDate(span.start, style) : `${formatDate(span.start, style)} through ${formatDate(span.end, style)}, inclusive`;
     return `${when}: ${span.lines.join("; ")}`;
@@ -128,14 +128,23 @@ export function changeLines(change: ChangeExplanation, style: "iso" | "dmy" | "m
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("What changed") && !/^\d{4}-\d{2}-\d{2}/.test(line) && !line.includes(" more date span"));
-  return spanLines.length ? [...spanLines, ...prose] : prose.length ? prose : [change.narrative || "No change has been described for this version."];
+  const lines = spanLines.length ? [...spanLines, ...prose] : prose.length ? prose : [change.narrative || "No change has been described for this version."];
+  return lines.map((line) => showStoredWeight(line, unit));
+}
+
+export function showStoredWeight(line: string, unit: "kg" | "lb") {
+  if (unit !== "lb") return line;
+  return line
+    .replaceAll("nearest 0.1 kg", "nearest 0.1 lb")
+    .replaceAll("0.1 kg display", "0.1 lb display")
+    .replace(/(\d+(?:\.\d+)?) kg\b/g, (_match, raw: string) => formatKg(Number(raw), "lb"));
 }
 
 function profileChanged(a: ScenarioInputs, b: ScenarioInputs): boolean {
   return JSON.stringify(a.profile) !== JSON.stringify(b.profile);
 }
 
-export function divergenceCopy(pairs: { date: string; observed: number; forecast: number | null }[]): string {
+export function divergenceCopy(pairs: { date: string; observed: number; forecast: number | null }[], unit: "kg" | "lb" = "kg"): string {
   const known = pairs.filter((p) => p.forecast != null) as { date: string; observed: number; forecast: number }[];
   if (known.length === 0) {
     return "There is no saved forecast on the dates of these readings, so a gap is not described. Readings stay observations. They do not edit the plan.";
@@ -143,10 +152,10 @@ export function divergenceCopy(pairs: { date: string; observed: number; forecast
   if (known.length < 2) {
     const only = known[0];
     const gap = round1(only.observed - only.forecast);
-    return `One reading on ${only.date} sits ${Math.abs(gap).toFixed(1)} kg ${gap >= 0 ? "above" : "below"} the original Hall central estimate. A single reading is a measurement, not a trend, and scale values vary. This is not a judgment of the plan. The forecast was not changed when the reading was saved.`;
+    return `One reading on ${only.date} sits ${formatKg(Math.abs(gap), unit)} ${gap >= 0 ? "above" : "below"} the original forecast. A single reading is a measurement, not a trend. The forecast was not changed.`;
   }
   const gaps = known.map((p) => ({ ...p, gap: p.observed - p.forecast }));
   const mean = gaps.reduce((s, g) => s + Math.abs(g.gap), 0) / gaps.length;
   const largest = gaps.reduce((a, b) => (Math.abs(a.gap) > Math.abs(b.gap) ? a : b));
-  return `Across ${known.length} readings, the absolute gap versus the original Hall forecast averages about ${round1(mean).toFixed(1)} kg. The largest gap in this set is ${round1(Math.abs(largest.gap)).toFixed(1)} kg on ${largest.date}. A gap can come from ordinary scale variability, a routine that differed from the plan, inputs the model never saw, or the limits of these equations. It is not a verdict on you or on the plan, and it is not a diagnosis of a plateau. Saving these readings did not change planned intake or activity.`;
+  return `Across ${known.length} readings, the average gap versus the original forecast is about ${formatKg(mean, unit)}. The largest gap is ${formatKg(Math.abs(largest.gap), unit)} on ${largest.date}. The forecast was not changed.`;
 }

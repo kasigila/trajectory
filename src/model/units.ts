@@ -1,4 +1,5 @@
-const LB_PER_KG = 2.2046226218;
+/** Display and entry conversion. Storage stays in kilograms. */
+const LB_PER_KG = 2.20462;
 const CM_PER_IN = 2.54;
 
 export function lbToKg(lb: number): number {
@@ -26,6 +27,14 @@ export function cmToFtIn(cm: number): { feet: number; inches: number } {
 
 export function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+export type UnitSystem = "metric" | "imperial";
+
+export function unitSystemPatch(system: UnitSystem): { unitSystem: UnitSystem; unit: "kg" | "lb"; lengthUnit: "cm" | "ft" } {
+  return system === "imperial"
+    ? { unitSystem: "imperial", unit: "lb", lengthUnit: "ft" }
+    : { unitSystem: "metric", unit: "kg", lengthUnit: "cm" };
 }
 
 export function formatKg(kg: number, unit: "kg" | "lb", hide = false): string {
