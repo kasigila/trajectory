@@ -51,7 +51,7 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
       ) : null}
       {draft.step === 1 ? (
         <>
-          <Field label="Profile date of birth" hint="Asked because age is an eligibility rule and a future reviewed model may need it. This stand-in does not use age in the arithmetic.">
+          <Field label="Profile date of birth" hint="Age is used in the Jackson body-fat estimate and in Mifflin–St Jeor. This date is the profile’s, separate from the 18+ check.">
             <input type="date" value={draft.birthDate} onChange={(event) => patch({ birthDate: event.target.value })} />
           </Field>
           <Field label="Excluded context" hint="If one of these applies, the app will not make a personalized forecast.">
@@ -76,11 +76,11 @@ function Wizard({ draft }: { draft: OnboardingDraft }) {
         <>
           <Field label="Profile name"><input value={draft.label} onChange={(event) => patch({ label: event.target.value })} /></Field>
           {draft.lengthUnit === "cm" ? (
-            <Field label="Height, cm" hint="Stored for a future model. This stand-in does not use height."><input value={draft.heightCm} onChange={(event) => patch({ heightCm: event.target.value })} /></Field>
+            <Field label="Height, cm" hint="Used in the Jackson equation and in Mifflin–St Jeor."><input value={draft.heightCm} onChange={(event) => patch({ heightCm: event.target.value })} /></Field>
           ) : (
             <div className="grid-2">
               <Field label="Feet"><input value={draft.heightFeet} onChange={(event) => patch({ heightFeet: event.target.value })} /></Field>
-              <Field label="Inches"><input value={draft.heightInches} onChange={(event) => patch({ heightInches: event.target.value })} /></Field>
+              <Field label="Inches" hint="Used in the Jackson equation and in Mifflin–St Jeor."><input value={draft.heightInches} onChange={(event) => patch({ heightInches: event.target.value })} /></Field>
             </div>
           )}
           <Field label={`Reference weight, ${draft.unit}`} hint="The Hall model starts the first scenario day at this weight.">

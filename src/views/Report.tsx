@@ -38,7 +38,7 @@ export function Report() {
           <p>{version.change.narrative}</p>
           <h2>Assumptions</h2>
           <ul>{(account.featureFlags.advancedMath ? version.assumptions : version.assumptions.slice(0, 6)).map((line) => <li key={line}>{line}</li>)}</ul>
-          <p>Reference weight {weight(version.inputSnapshot.profile.referenceWeightKg, account.preferences)} on {when(version.inputSnapshot.profile.referenceDate, account.preferences)}. Height is stored and unused by this stand-in.</p>
+          <p>Reference weight {weight(version.inputSnapshot.profile.referenceWeightKg, account.preferences)} on {when(version.inputSnapshot.profile.referenceDate, account.preferences)}. Height {version.inputSnapshot.profile.heightCm} cm is used in the Jackson equation and in Mifflin–St Jeor.</p>
         </>
       ) : <p>Save a scenario before printing a report.</p>}
       <h2>Limits</h2>

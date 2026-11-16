@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { DISCLAIMER } from "../copy";
+import { Notice } from "./ui";
 import { Logo } from "./Logo";
 import { diffDays, hourInTimeZone, todayIso } from "../model/dates";
 import type { Route } from "../route";
@@ -65,6 +66,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
             </button>
           </div>
         </header>
+        {account.isDemo ? <Notice>Sample data, not your measurements. This opens on {profile.label}. Use New profile to enter your own. Numbers stay in this browser.</Notice> : null}
         <Reminders />
         <main id="content">{children}</main>
         <footer className="legal">{DISCLAIMER}</footer>
