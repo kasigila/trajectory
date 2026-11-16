@@ -1,5 +1,6 @@
 import { proposeCalibration } from "../model/calibrate";
-import { canonicalSnapshot, runForecast } from "../model/engine";
+import { canonicalSnapshot } from "../model/engine";
+import { forecastAsync } from "../model/forecast-async";
 import { explainChange } from "../model/explain";
 import { sha256 } from "../model/hash";
 import { MODEL } from "../model/parameters";
@@ -19,7 +20,7 @@ export async function buildVersion(args: {
   const started = args.createdAt ?? new Date().toISOString();
   let result;
   try {
-    result = runForecast(args.inputs);
+    result = await forecastAsync(args.inputs);
   } catch (error) {
     const errorId = `err_${crypto.randomUUID().slice(0, 8)}`;
     return {

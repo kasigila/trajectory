@@ -2,6 +2,7 @@ import { TrajectoryChart } from "../components/Chart";
 import { PageTitle } from "../components/Shell";
 import { DISCLAIMER } from "../copy";
 import { energy, stamp, weight, when } from "../format";
+import { centralCrossing } from "../model/crossing";
 import { addDays, todayIso } from "../model/dates";
 import { maintenanceBasis } from "../model/engine";
 import { MODEL } from "../model/parameters";
@@ -49,7 +50,14 @@ export function Report() {
       ) : <p>Save a scenario before printing a report.</p>}
       <h2>Limits</h2>
       <p>{DISCLAIMER}</p>
-      <p>The shaded area is a sensitivity range, not a confidence interval. No crossing date is reported. The plan is not changed by this report.</p>
+      <p>The shaded area is a sensitivity range, not a confidence interval. {version?.inputSnapshot.goal?.weightKg != null ? crossingCopy(version.forecast.points, version.inputSnapshot.goal.weightKg) : "No chart marker is saved on this version."} The plan is not changed by this report.</p>
     </section>
   );
+}
+
+function crossingCopy(points: { date: string; centralKg: number }[], targetKg: number) {
+  const hit = centralCrossing(points, targetKg);
+  return hit
+    ? `The central series reaches the chart marker on ${hit.date}. That is arithmetic on the saved run, not a validated scale prediction.`
+    : "The central series does not reach the chart marker inside this horizon.";
 }

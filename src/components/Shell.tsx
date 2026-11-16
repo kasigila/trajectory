@@ -2,28 +2,33 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { DISCLAIMER } from "../copy";
 import { Notice } from "./ui";
+import { Icon, type IconName } from "./icons";
 import { Logo } from "./Logo";
+import { noteRoute } from "../state/usage";
 import { diffDays, hourInTimeZone, todayIso } from "../model/dates";
 import type { Route } from "../route";
 import { dismissReminder, setActiveProfile, signOut, useSession } from "../state/store";
 
-const PRIMARY: Array<{ id: Route; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "simulator", label: "Simulator" },
-  { id: "compare", label: "Compare" },
-  { id: "progress", label: "Progress" },
-  { id: "insights", label: "Insights" },
+const PRIMARY: Array<{ id: Route; label: string; icon: IconName }> = [
+  { id: "overview", label: "Overview", icon: "overview" },
+  { id: "simulator", label: "Simulator", icon: "simulator" },
+  { id: "compare", label: "Compare", icon: "compare" },
+  { id: "progress", label: "Progress", icon: "progress" },
+  { id: "insights", label: "Insights", icon: "insights" },
 ];
 
-const MORE: Array<{ id: Route; label: string }> = [
-  { id: "connections", label: "Connections" },
-  { id: "settings", label: "Settings" },
-  { id: "report", label: "Report" },
+const MORE: Array<{ id: Route; label: string; icon: IconName }> = [
+  { id: "connections", label: "Connections", icon: "connections" },
+  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "report", label: "Report", icon: "report" },
 ];
 
 export function Shell({ route, children }: { route: Route; children: ReactNode }) {
   const { account, profile } = useSession();
   const [more, setMore] = useState(false);
+  useEffect(() => {
+    if (account) noteRoute(route);
+  }, [account, route]);
   if (!account || !profile) return null;
   const today = todayIso(account.preferences.timeZone);
   return (
@@ -36,6 +41,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
         <nav aria-label="Primary">
           {[...PRIMARY, ...MORE].map((item) => (
             <a key={item.id} href={`#/${item.id}`} aria-current={route === item.id ? "page" : undefined}>
+              <Icon name={item.icon} />
               {item.label}
             </a>
           ))}
@@ -74,6 +80,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
       <nav className="bottom-nav" aria-label="Mobile">
         {PRIMARY.slice(0, 4).map((item) => (
           <a key={item.id} href={`#/${item.id}`} aria-current={route === item.id ? "page" : undefined}>
+            <Icon name={item.icon} />
             {item.label}
           </a>
         ))}
@@ -84,6 +91,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
           <div className="more-menu">
             {MORE.map((item) => (
               <a key={item.id} href={`#/${item.id}`} onClick={() => setMore(false)}>
+                <Icon name={item.icon} />
                 {item.label}
               </a>
             ))}
@@ -167,10 +175,22 @@ function phaseDue(account: NonNullable<ReturnType<typeof useSession>["account"]>
   return "";
 }
 
+const TITLE_ICON: Partial<Record<string, IconName>> = {
+  Trajectory: "overview",
+  Simulator: "simulator",
+  Compare: "compare",
+  Progress: "progress",
+  Insights: "insights",
+  Connections: "connections",
+  Settings: "settings",
+  "Private report": "report",
+};
+
 export function PageTitle({ kicker, title, lede, compact }: { kicker: string; title: string; lede?: string; compact?: boolean }) {
+  const icon = TITLE_ICON[kicker];
   return (
     <header className={compact ? "page-title compact" : "page-title"}>
-      <p className="kicker">{kicker}</p>
+      <p className="kicker">{icon ? <Icon name={icon} /> : null}{kicker}</p>
       <h1>{title}</h1>
       {lede ? <p className="lede">{lede}</p> : null}
     </header>

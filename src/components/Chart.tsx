@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { centralCrossing } from "../model/crossing";
 import { formatDate } from "../model/dates";
 import { formatKg, formatKcal, round1 } from "../model/units";
 
@@ -240,7 +241,7 @@ export function TrajectoryChart(props: Props) {
           </li>
         ) : null}
       </ul>
-      {props.goalKg != null ? <p className="fine">A crossing date is not shown. This build does not treat the Hall equations as validated for a goal-crossing date.</p> : null}
+      {props.goalKg != null ? <p className="fine">{crossingSentence(props, props.goalKg)}</p> : null}
       <details className="table-disclosure">
         <summary>Data table</summary>
         {dates.length > 21 ? (
@@ -293,6 +294,13 @@ export function TrajectoryChart(props: Props) {
       </details>
     </figure>
   );
+}
+
+function crossingSentence(props: Props, targetKg: number) {
+  const series = props.series[0];
+  const hit = series ? centralCrossing(series.points.map((point) => ({ date: point.date, centralKg: point.kg })), targetKg) : null;
+  if (!hit) return "The central series does not reach this chart marker inside the saved horizon. No scale date is promised.";
+  return `The central series reaches this chart marker on ${formatDate(hit.date, props.dateStyle ?? "dmy")}. That is arithmetic on the central series, not a validated prediction of a scale reading.`;
 }
 
 function shown(kg: number, props: Props, anchor: number) {

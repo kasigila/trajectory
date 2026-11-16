@@ -5,7 +5,8 @@ import { Button, Disclosure, Field, Notice } from "../components/ui";
 import { PageTitle } from "../components/Shell";
 import { energy, stamp } from "../format";
 import { addDays, todayIso } from "../model/dates";
-import { activityAdjustmentKcal, resolveDay, resolvePlan, runForecast, sourceLabel } from "../model/engine";
+import { activityAdjustmentKcal, resolveDay, resolvePlan, sourceLabel } from "../model/engine";
+import { forecastAsync } from "../model/forecast-async";
 import { explainChange } from "../model/explain";
 import { ACTIVITY_CATEGORIES, CATEGORY_LABEL, LIMITS, MODEL, type ActivityCategory } from "../model/parameters";
 import type { ActivityMode, DayPlanInput, ForecastResult, PhaseRule, ScenarioInputs } from "../model/types";
@@ -14,7 +15,6 @@ import {
   applyDayEdit,
   clearDayOverrides,
   commitDraft,
-  deleteScenario,
   discardDraft,
   duplicateScenario,
   profileStale,
@@ -165,7 +165,7 @@ export function Simulator() {
         today={today}
         goalKg={inputs.goal?.weightKg}
         goalLabel={inputs.goal?.label}
-        milestones={inputs.milestones}
+        milestones={inputs.milestones.filter((mark) => !mark.removedAt)}
         cycleDates={account.consents.some((item) => item.consentType === "cycle-context" && item.grantedAt && !item.revokedAt) ? account.cycleLogs.filter((log) => log.profileId === profile.id).map((log) => log.date) : []}
         observations={showWeighIns ? observations.map((obs) => ({ id: obs.id, date: obs.localDate, kg: obs.valueKg, source: obs.source })) : []}
         series={[
@@ -244,13 +244,13 @@ export function Simulator() {
           disabled={running}
           onClick={() =>
             void run(async () => {
-              const result = runForecast(inputs);
+              const result = await forecastAsync(inputs);
               if (result.status === "refused") setError(result.refusal?.message ?? "The preview was refused.");
               else setPreview(result);
             })
           }
         >
-          Preview forecast
+          {running ? "Working…" : "Preview forecast"}
         </Button>
         <Button disabled={!draft?.past.length} onClick={() => { undoDraft(account.id, scenario.id); setPreview(null); }}>
           Undo
@@ -270,7 +270,7 @@ export function Simulator() {
         </Button>
         <Button onClick={() => go("report")}>Print report</Button>
       </div>
-      <ScenarioMeta accountId={account.id} scenarioId={scenario.id} version={version} name={scenario.name} labels={scenario.labels} />
+      <ScenarioMeta accountId={account.id} scenarioId={scenario.id} version={version} name={scenario.name} labels={scenario.labels} archived={Boolean(scenario.archivedAt)} />
     </section>
   );
 }
@@ -608,7 +608,12 @@ function MarkerEditor({ inputs, onInputs }: { inputs: ScenarioInputs; onInputs: 
       </Button>
       <ul className="plain">
         {inputs.milestones.map((mark) => (
-          <li key={mark.id}>{mark.date}: {mark.label}</li>
+          <li key={mark.id}>
+            {mark.date}: {mark.label}{mark.removedAt ? " · removed" : ""}
+            <button type="button" onClick={() => onInputs({ ...inputs, milestones: inputs.milestones.map((item) => item.id === mark.id ? { ...item, removedAt: item.removedAt ? null : new Date().toISOString() } : item) })}>
+              {mark.removedAt ? "Restore" : "Remove"}
+            </button>
+          </li>
         ))}
       </ul>
       <Field label="Milestone label"><input value={label} onChange={(event) => setLabel(event.target.value)} /></Field>
@@ -664,7 +669,7 @@ function downloadPhases(inputs: ScenarioInputs) {
   URL.revokeObjectURL(url);
 }
 
-function ScenarioMeta({ accountId, scenarioId, version, name, labels }: { accountId: string; scenarioId: string; version: ScenarioVersion; name: string; labels: string[] }) {
+function ScenarioMeta({ accountId, scenarioId, version, name, labels, archived }: { accountId: string; scenarioId: string; version: ScenarioVersion; name: string; labels: string[]; archived: boolean }) {
   const [title, setTitle] = useState(name);
   const [tag, setTag] = useState("");
   useEffect(() => setTitle(name), [name]);
@@ -683,8 +688,13 @@ function ScenarioMeta({ accountId, scenarioId, version, name, labels }: { accoun
         <Button onClick={() => void duplicateScenario(accountId, scenarioId, version.id)}>Duplicate this version</Button>
         <Button onClick={() => void rerunLatest(accountId, scenarioId, version.id)}>Recalculate with latest model</Button>
         <Button onClick={() => downloadPhases(version.inputSnapshot)}>Download phase calendar</Button>
-        <Button onClick={() => setArchived(accountId, scenarioId, true)}>Archive</Button>
-        <Button variant="danger" onClick={() => deleteScenario(accountId, scenarioId)}>Delete scenario</Button>
+        <Button onClick={() => {
+          if (archived) {
+            setArchived(accountId, scenarioId, false);
+            return;
+          }
+          if (window.confirm("Remove this scenario from the active list? The versions stay on this device and can be restored.")) setArchived(accountId, scenarioId, true);
+        }}>{archived ? "Restore scenario" : "Remove scenario"}</Button>
       </div>
       <ul className="assumptions">
         {version.assumptions.map((line) => (

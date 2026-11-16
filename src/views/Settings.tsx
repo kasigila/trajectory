@@ -4,6 +4,8 @@ import { Button, Field, Notice } from "../components/ui";
 import { PRIVACY } from "../copy";
 import { stamp } from "../format";
 import { MODEL } from "../model/parameters";
+import { EXPORT_FORMAT, thinForExport } from "../state/export";
+import { usageRows } from "../state/usage";
 import { go } from "../route";
 import {
   addCycleLog,
@@ -114,7 +116,8 @@ export function Settings() {
           <li>Scenarios: {account.scenarios.length}</li>
           <li>Weigh-ins on the chart: {account.observations.filter((item) => !item.deletedAt).length}. Removed and still stored: {account.observations.filter((item) => item.deletedAt).length}.</li>
           <li>Cycle notes: {account.cycleLogs.length}</li>
-          <li>Analytics vendor: none in this build</li>
+          <li>Analytics vendor: none. Counts below stay in this browser and are not uploaded.</li>
+          {usageRows().map((row) => <li key={row.name}>Opened {row.name}: {row.count}</li>)}
         </ul>
         <h3>Consent records</h3>
         <ul>
@@ -272,7 +275,7 @@ function ImportCard() {
           const file = event.target.files?.[0];
           if (!file) return;
           try {
-            const result = importLocalAccount(JSON.parse(await file.text()));
+            const result = await importLocalAccount(JSON.parse(await file.text()));
             setMessage(result.ok ? "Import opened as the current session." : result.message);
           } catch {
             setMessage("That file could not be read. Nothing was imported.");
@@ -286,10 +289,7 @@ function ImportCard() {
 }
 
 function exportJson(account: NonNullable<ReturnType<typeof sessionAccount>>) {
-  const copy = structuredClone(account);
-  copy.passphraseHash = null;
-  copy.passphraseSalt = null;
-  downloadText(`trajectory-${account.id}.json`, JSON.stringify({ meta: { format: "trajectory-local-1", model: MODEL }, account: copy }, null, 2));
+  downloadText(`trajectory-${account.id}.json`, JSON.stringify({ meta: { format: EXPORT_FORMAT, model: MODEL, derived: "recompute" }, account: thinForExport(account) }, null, 2));
   recordExport(account.id, "json");
 }
 

@@ -81,6 +81,7 @@ export interface Milestone {
   id: string;
   date: string;
   label: string;
+  removedAt?: string | null;
 }
 
 export interface ScenarioInputs {

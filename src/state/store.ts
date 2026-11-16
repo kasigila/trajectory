@@ -25,6 +25,7 @@ import type {
   ScenarioVersion,
   WeightObservation,
 } from "./types";
+import { EXPORT_FORMAT, refillForecasts } from "./export";
 import { buildVersion } from "./version";
 
 type Memory = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -84,14 +85,14 @@ export function restoreSnapshot(): ActionResult {
   return { ok: true };
 }
 
-export function importLocalAccount(payload: unknown): ActionResult {
+export async function importLocalAccount(payload: unknown): Promise<ActionResult> {
   if (!payload || typeof payload !== "object") return fail("That file is not a Trajectory export. Nothing was imported.");
   const record = payload as { meta?: { format?: string }; account?: Account };
   const account = record.account;
-  if (record.meta?.format !== "trajectory-local-1" || !account || typeof account.id !== "string" || !Array.isArray(account.profiles)) {
+  if ((record.meta?.format !== "trajectory-local-1" && record.meta?.format !== EXPORT_FORMAT) || !account || typeof account.id !== "string" || !Array.isArray(account.profiles)) {
     return fail("That file is not a Trajectory local export. Nothing was imported.");
   }
-  const copy = structuredClone(account);
+  const copy = await refillForecasts(structuredClone(account));
   copy.passphraseHash = null;
   copy.passphraseSalt = null;
   copy.isDemo = false;
@@ -706,15 +707,7 @@ export function setArchived(accountId: string, scenarioId: string, archived: boo
 }
 
 export function deleteScenario(accountId: string, scenarioId: string) {
-  mapAccount(accountId, (account) => {
-    const drafts = { ...account.drafts };
-    delete drafts[scenarioId];
-    return audit(
-      { ...account, drafts, scenarios: account.scenarios.filter((scenario) => scenario.id !== scenarioId) },
-      "scenario.delete",
-      scenarioId,
-    );
-  });
+  setArchived(accountId, scenarioId, true);
 }
 
 export function setActiveVersion(accountId: string, scenarioId: string, versionId: string) {
