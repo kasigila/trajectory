@@ -210,6 +210,10 @@ textarea { width: 100%; min-height: 90px; }
 }
 .assumptions { max-width: 78ch; }
 .table-wrap { overflow: auto; max-height: 420px; border: 1px solid var(--line); border-radius: 12px; }
+.day-table { margin: 12px 0; }
+.day-table caption { text-align: left; padding: 10px 12px 0; }
+.day-table th, .day-table td { text-align: left; }
+.day-table thead th { position: sticky; top: 0; background: var(--bg-elev); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
 th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; white-space: nowrap; }
 th { position: sticky; top: 0; background: var(--bg-elev); }

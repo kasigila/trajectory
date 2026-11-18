@@ -8,7 +8,8 @@ import { askForecast } from "../model/question";
 import { smoothObservations } from "../model/trend";
 import { go } from "../route";
 import { setAsk, toProfileInput, useSession } from "../state/store";
-import type { ForecastResult } from "../model/types";
+import type { ForecastPoint, ForecastResult } from "../model/types";
+import type { Preferences } from "../state/types";
 
 export function Overview() {
   const { account, profile } = useSession();
@@ -71,6 +72,7 @@ export function Overview() {
           series={[{ id: "ask", label: "This question", band: true, points: forecast.points.map((point) => ({ date: point.date, kg: point.centralKg, lower: point.lowerKg, upper: point.upperKg, intake: point.intakeKcal, expenditure: point.expenditureKcal })) }]}
         />
       ) : null}
+      {forecast && last ? <DayTable startKg={startKg} startDate={today} points={forecast.points} prefs={account.preferences} /> : null}
       <Button onClick={() => go("progress")}>Log a weigh-in</Button>
       <Disclosure title="Details">
         <p>Starting from {weight(startKg, account.preferences)}{latest ? `, your last weigh-in on ${when(latest.localDate, account.preferences)}` : ""}. Same calories every day. Day-by-day edits stay on Plan.</p>
@@ -79,6 +81,40 @@ export function Overview() {
       </Disclosure>
     </section>
   );
+}
+
+function DayTable({ startKg, startDate, points, prefs }: { startKg: number; startDate: string; points: ForecastPoint[]; prefs: Preferences }) {
+  const rows = [{ day: "Start", date: startDate, kg: startKg }, ...points.map((point, index) => ({ day: String(index + 1), date: point.date, kg: point.centralKg }))];
+  return (
+    <div className="table-wrap day-table">
+      <table>
+        <caption>What you could weigh on each day. An estimate, not a scale reading.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Day</th>
+            <th scope="col">Date</th>
+            <th scope="col">Weight</th>
+            <th scope="col">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.day}-${row.date}`}>
+              <th scope="row">{row.day}</th>
+              <td>{when(row.date, prefs)}</td>
+              <td>{weight(row.kg, prefs)}</td>
+              <td>{changeFrom(startKg, row.kg, prefs)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function changeFrom(startKg: number, kg: number, prefs: Preferences) {
+  if (weight(startKg, prefs) === weight(kg, prefs)) return "Same";
+  return `${weight(Math.abs(startKg - kg), prefs)} ${startKg > kg ? "less" : "more"}`;
 }
 
 function changeLine(startKg: number, endKg: number, days: number, prefs: Parameters<typeof weight>[1]) {

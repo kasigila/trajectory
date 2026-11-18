@@ -66,7 +66,6 @@ export function TrajectoryChart(props: Props) {
     return props.unit === "lb" ? kgToLb(value) : value;
   };
   const [focus, setFocus] = useState<string | null>(dates.at(-1) ?? null);
-  const [showAll, setShowAll] = useState(false);
   const [noteStatus, setNoteStatus] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -310,11 +309,6 @@ export function TrajectoryChart(props: Props) {
       {props.goalKg != null ? <p className="fine">{crossingSentence(props, props.goalKg)}</p> : null}
       <details className="table-disclosure">
         <summary>Data table</summary>
-        {dates.length > 21 ? (
-          <button type="button" className="btn quiet" onClick={() => setShowAll((value) => !value)}>
-            {showAll ? "Show fewer dates" : `Show all ${dates.length} dates`}
-          </button>
-        ) : null}
         <div className="table-wrap">
           <table>
             <caption>{props.caption}. Shown to 0.1 {props.unit}. The range is sensitivity, not a promise.</caption>
@@ -337,7 +331,7 @@ export function TrajectoryChart(props: Props) {
               </tr>
             </thead>
             <tbody>
-              {(showAll || dates.length <= 21 ? dates : [...dates.slice(0, 14), ...dates.slice(-7)]).map((date) => (
+              {dates.map((date) => (
                 <tr key={date} className={date === focus ? "is-focus" : undefined}>
                   <th scope="row">{formatDate(date, props.dateStyle ?? "dmy")}</th>
                   {props.series.map((series) => {

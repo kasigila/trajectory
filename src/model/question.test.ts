@@ -38,6 +38,13 @@ describe("the calorie question", () => {
     expect(endKg(1000, 30)).toBeLessThan(endKg(1000, 20));
   });
 
+  it("keeps a weight for day 15 of a 30-day question", () => {
+    const result = askForecast(profile, { startKg: 86, startDate: "2026-11-17", intakeKcal: 1000, days: 30, timeZone: "America/Toronto" });
+    expect(result.points).toHaveLength(30);
+    expect(result.points[14].centralKg).toBeLessThan(86);
+    expect(result.points[14].centralKg).toBeGreaterThan(result.points[29].centralKg);
+  });
+
   it("does not change the stored starting weight", () => {
     askForecast(profile, { startKg: 80, startDate: "2026-11-17", intakeKcal: 500, days: 30, timeZone: "America/Toronto" });
     expect(profile.referenceWeightKg).toBe(86);

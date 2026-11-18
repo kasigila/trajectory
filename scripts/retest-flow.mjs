@@ -126,6 +126,9 @@ try {
   const firstAnswer = await ask("500", "30");
   const secondAnswer = await ask("1000", "20");
   check("changing calories and days updates the answer", Boolean(firstAnswer) && Boolean(secondAnswer) && firstAnswer !== secondAnswer && secondAnswer.includes("in 20 days"));
+  const daysShown = await evalValue(`JSON.stringify([...document.querySelectorAll(".day-table tbody th")].map((cell) => cell.textContent.trim()))`);
+  const dayLabels = JSON.parse(daysShown || "[]");
+  check("table shows each day including day 15", dayLabels.includes("Start") && dayLabels.includes("15") && dayLabels.includes("20") && !dayLabels.includes("30"));
   if (firstAnswer === secondAnswer) console.log(JSON.stringify({ firstAnswer, secondAnswer }));
 
   await clickText("Sign out");
