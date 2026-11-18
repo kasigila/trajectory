@@ -107,8 +107,26 @@ try {
 
   await go("#/overview");
   const overview = await evalValue("document.body.innerText");
-  check("one far reading uses sits", overview.includes("1 weigh-in sits far"));
-  check("calibration progress is on the overview", overview.includes("Calibration progress") && overview.includes("1 of 4 readings"));
+  check("home answers calories and days", overview.includes("Calories a day") && overview.includes("kcal a day") && overview.includes("in "));
+  async function ask(calories, days) {
+    await evalValue(`(() => {
+      const inputs = [...document.querySelectorAll(".ask input")];
+      const set = (input, value) => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+        setter?.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      if (inputs[0]) set(inputs[0], ${JSON.stringify(calories)});
+      if (inputs[1]) set(inputs[1], ${JSON.stringify(days)});
+      return "set";
+    })()`);
+    await delay(80);
+    return evalValue(`document.querySelector("h1")?.textContent || ""`);
+  }
+  const firstAnswer = await ask("500", "30");
+  const secondAnswer = await ask("1000", "20");
+  check("changing calories and days updates the answer", Boolean(firstAnswer) && Boolean(secondAnswer) && firstAnswer !== secondAnswer && secondAnswer.includes("in 20 days"));
+  if (firstAnswer === secondAnswer) console.log(JSON.stringify({ firstAnswer, secondAnswer }));
 
   await clickText("Sign out");
   await delay(150);

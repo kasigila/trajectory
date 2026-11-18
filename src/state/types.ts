@@ -53,6 +53,9 @@ export interface Profile extends ProfileInput {
   updatedAt: string;
   /** Display choice for this profile. Weights stay stored in kilograms. */
   unitSystem?: "metric" | "imperial";
+  /** Last calories-a-day question. Not a model input until a forecast is run. */
+  askIntakeKcal?: number;
+  askDays?: number;
 }
 
 export interface ForecastRunRecord {

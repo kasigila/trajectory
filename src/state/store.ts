@@ -217,16 +217,30 @@ export function sessionAccount() {
 }
 
 export function toProfileInput(profile: Profile): ProfileInput {
-  const { id, label, createdAt, updatedAt, ...input } = profile;
+  const { id, label, createdAt, updatedAt, unitSystem, askIntakeKcal, askDays, ...input } = profile;
   void id;
   void label;
   void createdAt;
   void updatedAt;
+  void unitSystem;
+  void askIntakeKcal;
+  void askDays;
   return input;
 }
 
+export function setAsk(accountId: string, profileId: string, intakeKcal: number, days: number) {
+  mapAccount(accountId, (account) => ({
+    ...account,
+    profiles: account.profiles.map((profile) => (profile.id === profileId ? { ...profile, askIntakeKcal: intakeKcal, askDays: days } : profile)),
+  }));
+}
+
 export function profileStale(profile: Profile, snapshot: ProfileInput) {
-  return stableString(toProfileInput(profile)) !== stableString(snapshot);
+  const { unitSystem, askIntakeKcal, askDays, ...saved } = snapshot as ProfileInput & { unitSystem?: unknown; askIntakeKcal?: unknown; askDays?: unknown };
+  void unitSystem;
+  void askIntakeKcal;
+  void askDays;
+  return stableString(toProfileInput(profile)) !== stableString(saved);
 }
 
 function consent(type: ConsentRecord["consentType"], granted: boolean): ConsentRecord {

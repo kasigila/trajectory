@@ -1,105 +1,97 @@
-import { ChangeList } from "../components/ChangeList";
+import { useEffect, useRef, useState } from "react";
 import { TrajectoryChart } from "../components/Chart";
-import { Disclosure } from "../components/ui";
-import { Button } from "../components/ui";
-import { energy, stamp, weight, when } from "../format";
-import { proposeCalibration } from "../model/calibrate";
-import { centralCrossing } from "../model/crossing";
-import { weighInPattern } from "../model/streak";
-import { todayIso } from "../model/dates";
-import { HALL_CITATION, PRODUCT } from "../model/parameters";
+import { Button, Disclosure, Field } from "../components/ui";
+import { weight, when } from "../format";
+import { addDays, todayIso } from "../model/dates";
+import { horizonBoundMessage, intakeBoundMessage } from "../model/bounds";
+import { askForecast } from "../model/question";
 import { smoothObservations } from "../model/trend";
 import { go } from "../route";
-import { useSession } from "../state/store";
+import { setAsk, toProfileInput, useSession } from "../state/store";
+import type { ForecastResult } from "../model/types";
 
 export function Overview() {
   const { account, profile } = useSession();
-  if (!account || !profile) return null;
-  const scenarios = account.scenarios.filter((item) => item.profileId === profile.id && !item.archivedAt);
-  const scenario = scenarios[0];
+  const scenario = account?.scenarios.find((item) => item.profileId === profile?.id && !item.archivedAt);
   const version = scenario?.versions.find((item) => item.id === scenario.activeVersionId);
-  const observations = account.observations.filter((obs) => obs.profileId === profile.id && !obs.deletedAt).sort((a, b) => a.localDate.localeCompare(b.localDate));
-  const forCalibration = observations.filter((obs) => !obs.excludeFromCalibration);
+  const startingIntake = profile?.askIntakeKcal ?? version?.inputSnapshot.baseline?.intakeKcal ?? 2000;
+  const startingDays = profile?.askDays ?? version?.inputSnapshot.horizonDays ?? 30;
+  const [calories, setCalories] = useState(String(Math.round(startingIntake)));
+  const [days, setDays] = useState(String(startingDays));
+  const held = useRef<ForecastResult | null>(null);
+  const observations = (account?.observations ?? []).filter((obs) => obs.profileId === profile?.id && !obs.deletedAt).sort((a, b) => a.localDate.localeCompare(b.localDate));
   const latest = observations.at(-1);
-  const today = todayIso(account.preferences.timeZone);
-  const points = version?.forecast.points ?? [];
-  const firstPoint = points[0];
-  const lastPoint = points.at(-1);
-  const coverage = version ? proposeCalibration(version.inputSnapshot, forCalibration.map((obs) => ({ date: obs.localDate, kg: obs.valueKg }))) : null;
-  const marker = version?.inputSnapshot.goal;
-  const pattern = weighInPattern(observations.map((obs) => obs.localDate), today);
-  const crossing = marker?.weightKg != null && version ? centralCrossing(points.map((point) => ({ date: point.date, centralKg: point.centralKg })), marker.weightKg) : null;
-  const answer = lastPoint ? `${weight(lastPoint.centralKg, account.preferences)} on ${when(lastPoint.date, account.preferences)}` : "No forecast yet";
+  const today = todayIso(account?.preferences.timeZone ?? "UTC");
+  const startKg = latest?.valueKg ?? profile?.referenceWeightKg ?? 0;
+  const intake = Number(calories);
+  const horizon = Number(days);
+  const intakeProblem = intakeBoundMessage(intake);
+  const dayProblem = horizonBoundMessage(horizon);
+  const ready = intakeProblem.error == null && dayProblem == null;
+  const live = account && profile && ready ? askForecast(toProfileInput(profile), { startKg, startDate: today, intakeKcal: intake, days: horizon, timeZone: account.preferences.timeZone }) : null;
+  if (live?.status === "complete") held.current = live;
+  const forecast = live?.status === "complete" ? live : held.current;
+  const last = forecast?.points.at(-1);
+  const endDate = last?.date ?? (ready ? addDays(today, horizon - 1) : today);
+  useEffect(() => {
+    if (!account || !profile || !ready) return;
+    if (profile.askIntakeKcal === intake && profile.askDays === horizon) return;
+    setAsk(account.id, profile.id, intake, horizon);
+  }, [account, profile, intake, horizon, ready]);
+  if (!account || !profile) return null;
+  const change = last ? changeLine(startKg, last.centralKg, horizon, account.preferences) : "Enter calories and days";
   return (
     <section className="overview-hero">
       <header className="answer">
         <p className="kicker">Home</p>
-        <h1>{answer}</h1>
-        <p className="lede">{firstPoint ? `From ${weight(firstPoint.centralKg, account.preferences)} on ${when(firstPoint.date, account.preferences)}. ` : ""}Estimate from your plan. Not a scale reading.</p>
+        <h1>{change}</h1>
+        <p className="lede">{last ? `You'd weigh ${weight(last.centralKg, account.preferences)} on ${when(endDate, account.preferences)} if you eat ${Math.round(intake).toLocaleString("en-US")} kcal a day. Estimate, not a scale reading.` : "Your stats are saved. Type calories and days to see a weight."}</p>
       </header>
-      {version ? (
+      <div className="ask">
+        <Field label="Calories a day">
+          <input inputMode="decimal" value={calories} onChange={(event) => setCalories(event.target.value)} />
+        </Field>
+        <Field label="Days">
+          <input inputMode="numeric" value={days} onChange={(event) => setDays(event.target.value)} />
+        </Field>
+      </div>
+      {intakeProblem.error ? <p role="alert">{intakeProblem.error}</p> : intakeProblem.warning ? <p>That intake is outside 800–6,000 kcal a day. The estimate is still shown.</p> : null}
+      {dayProblem ? <p role="alert">{dayProblem}</p> : null}
+      {live?.status === "refused" ? <p role="alert">{live.refusal?.message}</p> : null}
+      {forecast ? (
         <TrajectoryChart
           prominent
-          caption="Weight on each date"
+          caption="Weight if you eat this every day"
           unit={account.preferences.unit}
           hideAbsolute={account.preferences.hideWeight}
           dateStyle={account.preferences.dateFormat}
           today={today}
           observations={observations.map((obs) => ({ id: obs.id, date: obs.localDate, kg: obs.valueKg, source: obs.source }))}
           trend={smoothObservations(observations.map((obs) => ({ date: obs.localDate, kg: obs.valueKg })))}
-          goalKg={marker?.weightKg}
-          goalDate={marker?.date}
-          goalLabel={marker?.label}
-          series={[{ id: version.id, label: scenario?.name ?? "Plan", band: true, points: points.map((point) => ({ date: point.date, kg: point.centralKg, lower: point.lowerKg, upper: point.upperKg, intake: point.intakeKcal, expenditure: point.expenditureKcal })) }]}
+          series={[{ id: "ask", label: "This question", band: true, points: forecast.points.map((point) => ({ date: point.date, kg: point.centralKg, lower: point.lowerKg, upper: point.upperKg, intake: point.intakeKcal, expenditure: point.expenditureKcal })) }]}
         />
-      ) : (
-        <p>No forecast yet.</p>
-      )}
-      <div className="metrics">
-        <article>
-          <h2>Now</h2>
-          <p className="figure">{latest ? weight(latest.valueKg, account.preferences) : "None"}</p>
-          <p>{latest ? when(latest.localDate, account.preferences) : "No weigh-in yet."}</p>
-        </article>
-        <article>
-          <h2>Plan</h2>
-          <p className="figure">{scenario?.name ?? "None"}</p>
-          <p>{version ? `Version ${version.versionNumber}` : "Make a plan to see dates."}</p>
-        </article>
-        <article>
-          <h2>End</h2>
-          <p className="figure">{lastPoint ? weight(lastPoint.centralKg, account.preferences) : "—"}</p>
-          <p>{lastPoint ? when(lastPoint.date, account.preferences) : "No run yet."}</p>
-        </article>
-        <article>
-          <h2>Calibration progress</h2>
-          <p className="figure">{coverage ? `${coverage.readingCount} of ${PRODUCT.calibrationMinReadings}` : "—"}</p>
-          <p>{coverage ? `${coverage.readingCount} of ${PRODUCT.calibrationMinReadings} readings` : "Save a plan to start."}</p>
-        </article>
-      </div>
-      <div className="toolbar">
-        <Button variant="primary" onClick={() => go(version ? "progress" : "simulator")}>{version ? "Log a weigh-in" : "Make a plan"}</Button>
-        <Button onClick={() => go("simulator")}>Change the plan</Button>
-        <Button onClick={() => go("compare")}>Compare</Button>
-      </div>
+      ) : null}
+      <Button onClick={() => go("progress")}>Log a weigh-in</Button>
       <Disclosure title="Details">
-        <p>{lastPoint ? rangeLine(lastPoint.lowerKg, lastPoint.upperKg, account.preferences) : "Save a plan to see an end weight."}</p>
-        {coverage ? <p>Calibration progress: {coverage.readingCount} of {PRODUCT.calibrationMinReadings} readings, spanning {coverage.spanDays} of {PRODUCT.calibrationMinSpanDays} days. {coverage.eligible ? "Insights can describe a sketch." : coverage.reason}</p> : null}
-        {pattern.lastDate ? <p>{pattern.due ? `Your spacing is about every ${pattern.medianGapDays} days. The last reading was ${pattern.daysSinceLast} days ago.` : `${pattern.onPatternStreak} readings in a row at your own spacing.`} This describes readings already stored here.</p> : null}
-        {marker?.weightKg != null ? <p>Marker {weight(marker.weightKg, account.preferences)}{marker.date ? ` by ${when(marker.date, account.preferences)}` : ""}. {crossing ? `The line reaches it on ${when(crossing.date, account.preferences)}. That date is arithmetic on the saved run, not a scale prediction.` : "The line does not reach it in this plan."}</p> : null}
-        <h2>Latest saved change</h2>
-        <ChangeList change={version?.change} dateStyle={account.preferences.dateFormat} unit={account.preferences.unit} />
-        <p>Starting weight {weight(profile.referenceWeightKg, account.preferences)} on {when(profile.referenceDate, account.preferences)}. Baseline expenditure {profile.energyBasis === "model-estimated" ? "estimated from height and activity" : energy(profile.maintenanceKcal ?? 0)}.</p>
-        {version ? <p>Forecast saved {stamp(version.forecast.completedAt)}.</p> : null}
-        <p>{HALL_CITATION} The shaded band is input sensitivity, not a prediction interval. <a href="#/insights">About the model</a></p>
+        <p>Starting from {weight(startKg, account.preferences)}{latest ? `, your last weigh-in on ${when(latest.localDate, account.preferences)}` : ""}. Same calories every day. Day-by-day edits stay on Plan.</p>
+        {last ? <p>{rangeLine(last.lowerKg, last.upperKg, account.preferences)}</p> : null}
+        <p><a href="#/insights">About the model</a></p>
       </Disclosure>
     </section>
   );
+}
+
+function changeLine(startKg: number, endKg: number, days: number, prefs: Parameters<typeof weight>[1]) {
+  const start = weight(startKg, prefs);
+  const end = weight(endKg, prefs);
+  if (start === end) return `About the same in ${days} days`;
+  const less = startKg > endKg;
+  return `${weight(Math.abs(startKg - endKg), prefs)} ${less ? "less" : "more"} in ${days} days`;
 }
 
 function rangeLine(lower: number, upper: number, prefs: Parameters<typeof weight>[1]) {
   const low = weight(lower, prefs);
   const high = weight(upper, prefs);
   if (low === high) return "The two ends of the band round to the same number, so no range is shown.";
-  return `End range ${low} to ${high}.`;
+  return `The range on the last day is ${low} to ${high}.`;
 }
